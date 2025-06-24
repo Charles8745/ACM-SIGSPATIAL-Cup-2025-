@@ -10,10 +10,10 @@ print(cityB_raw_df.tail())
 # Create subplot
 
 # 全域全時heatmap
-plt.figure(figsize=(20, 20))
+plt.figure(figsize=(25, 25))
 plt.xlim(1, 200)
 plt.ylim(1, 200)
-plt.scatter(cityB_raw_df['x'], cityB_raw_df['y'], alpha=0.03, s=1, c='r')
+plt.scatter(cityB_raw_df['x'], cityB_raw_df['y'], alpha=0.05, s=1, c='r')
 
 plt.title("CityB Heatmap ")
 plt.gca().set_aspect('equal')
