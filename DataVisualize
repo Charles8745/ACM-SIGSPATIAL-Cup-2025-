@@ -1,16 +1,20 @@
+import numpy as np
 import math
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.animation as anime
 from matplotlib.ticker import MultipleLocator
 from matplotlib.ticker import AutoLocator
-from matplotlib.animation import FuncAnimation
-
 matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
+# Hyperparameters
+csv_file = "./cityB.csv"
+uid = 1
+
 # Read the CSV file for City 
-cityB_raw_df = pd.read_csv("./cityB.csv", header=0, dtype=int)
+cityB_raw_df = pd.read_csv(csv_file, header=0, dtype=int)
 
 # Clean the data by removing x or y = 999
 cityB_clean_df = cityB_raw_df[(cityB_raw_df['x'] != 999) & (cityB_raw_df['y'] != 999)]
@@ -32,7 +36,6 @@ axs[0, 0].xaxis.set_major_locator(MultipleLocator(10))
 axs[0, 0].yaxis.set_major_locator(MultipleLocator(10))
 
 # 單人全時軌跡
-uid = 0
 person_df = cityB_clean_df[(cityB_clean_df['uid'] == uid)]
 # person_df = cityB_clean_df[(cityB_clean_df['uid'] == uid) & (cityB_clean_df['d'] == 0)]
 axs[0, 1].plot(person_df['x'], person_df['y'], marker='o', markersize=2, linewidth=1, alpha=0.5, c='r')
@@ -54,19 +57,40 @@ axs[0, 1].yaxis.set_major_locator(AutoLocator())
 print(f"uid:{uid} 的資料筆數: {person_df.shape[0]}")
 
 # 單人天數軌跡變化
-# days = sorted(person_df['d'].unique())
-# line, = axs[1, 0].plot([], [], marker='o', markersize=2, linewidth=1, alpha=1, c='r')
-# def init():
-#     line.set_data([], [])
-#     return line,
+ani_fig, ani_ax = plt.subplots()
 
-# def update(day):
-#     sub = person_df[person_df['d'] == day]
-#     line.set_data(sub['x'], sub['y'])
-#     axs[1, 0].set_title(f"uid={uid} 的軌跡（第{day}天）")
-#     return line,
-# ani = FuncAnimation(fig, update, frames=days, init_func=init, blit=True, interval=500, repeat=False)
-# ani.save('track.gif', writer='pillow')
+ani_ax.set_xlim(x_min, x_min + gap)
+ani_ax.set_ylim(y_min, y_min + gap)
+x = person_df['x']
+y = person_df['y']
+days =  person_df['d']
+time = person_df['t']
+def init():
+    ani_ax.clear()
+    ani_ax.set_xlim(x_min, x_min + gap)
+    ani_ax.set_ylim(y_min, y_min + gap)
+    ani_ax.invert_yaxis()
+
+def run(i):
+    ani_ax.clear()
+    ani_ax.set_xlim(x_min, x_min + gap)
+    ani_ax.set_ylim(y_min, y_min + gap)
+    ani_ax.invert_yaxis()
+
+    window = 5  # 記憶幾個點
+    for j in range(max(0, i - window + 1), i + 1):
+        alpha = 0.1 + 0.9 * (j - max(0, i - window + 1)) / window  # 越舊越淡
+        ani_ax.scatter(x.iloc[j], y.iloc[j], alpha=alpha, s=30, c='r')
+
+    ani_ax.grid(True, alpha=0.3)
+    ani_ax.xaxis.set_major_locator(AutoLocator())
+    ani_ax.yaxis.set_major_locator(AutoLocator())
+    ani_ax.set_title(f"第{days.iloc[i]}天 {time.iloc[i]*0.5}點鐘\nuid={uid} 的軌跡")
+
+ani = anime.FuncAnimation(ani_fig, run, frames=person_df.shape[0], init_func=init, repeat=True)
+# ani.save(f'UID:{uid}.gif', fps=12, writer='pillow')
+
+# 不同時段的的全域heatmap
 
 # Show the plot
 plt.tight_layout()
