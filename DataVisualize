@@ -1,24 +1,73 @@
+import math
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import AutoLocator
+from matplotlib.animation import FuncAnimation
+
+matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
+matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
 # Read the CSV file for City 
 cityB_raw_df = pd.read_csv("./cityB.csv", header=0, dtype=int)
-print(cityB_raw_df.tail())
 
 # Clean the data by removing x or y = 999
+cityB_clean_df = cityB_raw_df[(cityB_raw_df['x'] != 999) & (cityB_raw_df['y'] != 999)]
+print(cityB_clean_df.tail())
+print(f"共有可用{cityB_clean_df.shape[0]}筆資料\n已移除{cityB_raw_df.shape[0] - cityB_clean_df.shape[0]}筆無效資料")
 
 # Create subplot
+fig, axs = plt.subplots(2, 2, figsize=(20, 20))
 
 # 全域全時heatmap
-plt.figure(figsize=(25, 25))
-plt.xlim(1, 200)
-plt.ylim(1, 200)
-plt.scatter(cityB_raw_df['x'], cityB_raw_df['y'], alpha=0.05, s=1, c='r')
+axs[0, 0].scatter(cityB_clean_df['x'], cityB_clean_df['y'], alpha=0.05, s=1, c='r')
+axs[0, 0].set_title("全域全時Heatmap")
+axs[0, 0].set_xlim(1, 200)
+axs[0, 0].set_ylim(1, 200)
+axs[0, 0].set_aspect('equal')
+axs[0, 0].invert_yaxis()
+axs[0, 0].grid(True, alpha=0.3)
+axs[0, 0].xaxis.set_major_locator(MultipleLocator(10))
+axs[0, 0].yaxis.set_major_locator(MultipleLocator(10))
 
-plt.title("CityB Heatmap ")
-plt.gca().set_aspect('equal')
-plt.gca().invert_yaxis()
-plt.grid(True, alpha=0.3)
+# 單人全時軌跡
+uid = 0
+person_df = cityB_clean_df[(cityB_clean_df['uid'] == uid)]
+# person_df = cityB_clean_df[(cityB_clean_df['uid'] == uid) & (cityB_clean_df['d'] == 0)]
+axs[0, 1].plot(person_df['x'], person_df['y'], marker='o', markersize=2, linewidth=1, alpha=0.5, c='r')
+axs[0, 1].set_title(f"uid={uid} 的軌跡")
+x_min = math.floor(person_df['x'].min())
+x_max = math.ceil(person_df['x'].max())
+x_gap = x_max - x_min
+y_min = math.floor(person_df['y'].min())
+y_max = math.ceil(person_df['y'].max())
+y_gap = y_max - y_min
+gap = x_gap if x_gap > y_gap else y_gap
+axs[0, 1].set_xlim(x_min, x_min + gap)
+axs[0, 1].set_ylim(y_min, y_min + gap)
+axs[0, 1].set_aspect('equal')
+axs[0, 1].invert_yaxis()
+axs[0, 1].grid(True, alpha=0.3)
+axs[0, 1].xaxis.set_major_locator(AutoLocator())
+axs[0, 1].yaxis.set_major_locator(AutoLocator())
+print(f"uid:{uid} 的資料筆數: {person_df.shape[0]}")
+
+# 單人天數軌跡變化
+# days = sorted(person_df['d'].unique())
+# line, = axs[1, 0].plot([], [], marker='o', markersize=2, linewidth=1, alpha=1, c='r')
+# def init():
+#     line.set_data([], [])
+#     return line,
+
+# def update(day):
+#     sub = person_df[person_df['d'] == day]
+#     line.set_data(sub['x'], sub['y'])
+#     axs[1, 0].set_title(f"uid={uid} 的軌跡（第{day}天）")
+#     return line,
+# ani = FuncAnimation(fig, update, frames=days, init_func=init, blit=True, interval=500, repeat=False)
+# ani.save('track.gif', writer='pillow')
 
 # Show the plot
+plt.tight_layout()
 plt.show()
