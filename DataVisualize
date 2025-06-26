@@ -11,10 +11,13 @@ matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
 # Global parameters
-csv_file = "./Data/city_A_challengedata.csv"  
+city = "A"
+csv_file = f"./Data/city_{city}_challengedata.csv"  
 specific_time = 7 # 設定要顯示時段的全域heatmap，間隔為specific_time~specific_time+specific_time_gap點
 specific_time_gap = 1 # 時段間隔
-uid = 3
+heatmap_gif_day = 14 # 分時heatmap動畫的天數
+uid = 3 # 單人全時軌跡的uid
+plt_show = True  # 是否顯示圖形
 
 # Read the CSV file for City 
 cityB_raw_df = pd.read_csv(csv_file, header=0, dtype=int)
@@ -148,8 +151,8 @@ def update_heatmap(frame):
     day = frame // 24 + 1  # 天數從1開始
     hour = frame % 24
     frame_df = cityB_clean_df[(cityB_clean_df['d'] == day) & (cityB_clean_df['t']*0.5 >= hour) & (cityB_clean_df['t']*0.5 < hour + 1)]
-    if frame_df.shape[0] > 10000:
-        frame_df = frame_df.sample(n=10000)
+    if frame_df.shape[0] > 50000:
+        frame_df = frame_df.sample(n=50000)
     if not frame_df.empty:
         sns.kdeplot(
             data=frame_df, x="x", y="y",
@@ -166,11 +169,12 @@ def update_heatmap(frame):
     heatmap_ani_ax.grid(True, alpha=0.3)
     heatmap_ani_ax.xaxis.set_major_locator(MultipleLocator(10))
     heatmap_ani_ax.yaxis.set_major_locator(MultipleLocator(10))
-    print(f"分時Heatmap動畫進度: {frame+1}/120 (day={day}, hour={hour}:00~{hour+1}:00)", end='\r')
+    print(f"分時Heatmap動畫進度: {frame+1}/{heatmap_gif_day*24} (day={day}, hour={hour}:00~{hour+1}:00)", end='\r')
 
-heatmap_ani = anime.FuncAnimation(heatmap_ani_fig, update_heatmap, frames=5*24, init_func=init, repeat=False)
+heatmap_ani = anime.FuncAnimation(heatmap_ani_fig, update_heatmap, frames=heatmap_gif_day*24, init_func=init, repeat=False)
 heatmap_ani.save(f'./global_time_heatmap_day_hour.gif', fps=2, writer='pillow')
 print("全域分時Heatmap動畫 完成")
 
-plt.tight_layout()
-plt.show()
+if plt_show:
+    plt.tight_layout()
+    plt.show()
