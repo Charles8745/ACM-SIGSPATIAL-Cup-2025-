@@ -11,7 +11,7 @@ matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
 # Global parameters
-city = "A"
+city = "D"
 csv_file = f"./Data/city_{city}_challengedata.csv"  
 specific_time = 7 # 設定要顯示時段的全域heatmap，間隔為specific_time~specific_time+specific_time_gap點
 specific_time_gap = 1 # 時段間隔
