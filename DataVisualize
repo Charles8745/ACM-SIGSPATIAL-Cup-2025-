@@ -66,18 +66,18 @@ print("單人全時軌跡 完成")
 
 # 特定時段的的全域heatmap
 print("正在繪製特定時段全域Heatmap...")
-specific_time_heatmap_df = cityB_clean_df[(cityB_clean_df['t'] >= specific_time) & (cityB_clean_df['t'] < (specific_time + specific_time_gap)%24)]
+specific_time_heatmap_df = cityB_clean_df[(cityB_clean_df['t']*0.5 >= specific_time) & (cityB_clean_df['t']*0.5 < (specific_time + specific_time_gap)%24)]
 
-if specific_time_heatmap_df.shape[0] > 150000:
-    print(f"共有{specific_time_heatmap_df.shape[0]}筆資料，超過150000，將隨機抽樣150000筆資料")
-    specific_time_heatmap_df = specific_time_heatmap_df.sample(n=150000) 
+if specific_time_heatmap_df.shape[0] > 200000:
+    print(f"共有{specific_time_heatmap_df.shape[0]}筆資料，超過200000，將隨機抽樣200000筆資料")
+    specific_time_heatmap_df = specific_time_heatmap_df.sample(n=200000) 
 else:
     specific_time_heatmap_df
 
 print(f"全域Heatmap (time= {specific_time}:00~{specific_time + specific_time_gap}:00)的資料筆數: {specific_time_heatmap_df.shape[0]}")
 sns.kdeplot(
     data=specific_time_heatmap_df, x="x", y="y",
-    fill=True, cmap="Reds", bw_adjust=2, gridsize=50, 
+    fill=True, cmap="Reds", bw_adjust=1, gridsize=80, levels=25, 
     ax=axs[1, 0], alpha=0.5
 )
 axs[1, 0].set_xlabel("")  # 不顯示 x 軸名稱
@@ -92,10 +92,10 @@ axs[1, 0].xaxis.set_major_locator(MultipleLocator(10))
 axs[1, 0].yaxis.set_major_locator(MultipleLocator(10))
 print("特定時段全域Heatmap 完成")
 
+
 # 單人分時軌跡動畫
+print("正在繪製單人分時軌跡動畫...")
 ani_fig, ani_ax = plt.subplots()
-ani_ax.set_xlim(x_min, x_min + gap)
-ani_ax.set_ylim(y_min, y_min + gap)
 x = person_df['x']
 y = person_df['y']
 days = person_df['d']
@@ -129,9 +129,48 @@ def run(i):
 
 ani = anime.FuncAnimation(ani_fig, run, frames=person_df.shape[0], init_func=init, repeat=True)
 ani.save(f'./uid_{uid}_animation.gif', fps=3, writer='pillow')
+print("單人分時軌跡動畫 完成")
 
 # 全域分時heatmap動畫
+print("正在繪製全域分時Heatmap動畫...")
+heatmap_ani_fig, heatmap_ani_ax = plt.subplots(figsize=(8, 8))
+def init():
+    heatmap_ani_ax.clear()
+    heatmap_ani_ax.set_xlim(1, 200)
+    heatmap_ani_ax.set_ylim(1, 200)
+    heatmap_ani_ax.invert_yaxis()
 
-# Show the plot
+def update_heatmap(frame):
+    heatmap_ani_ax.clear()
+    heatmap_ani_ax.set_xlim(1, 200)
+    heatmap_ani_ax.set_ylim(1, 200)
+    heatmap_ani_ax.invert_yaxis()
+    day = frame // 24 + 1  # 天數從1開始
+    hour = frame % 24
+    frame_df = cityB_clean_df[(cityB_clean_df['d'] == day) & (cityB_clean_df['t']*0.5 >= hour) & (cityB_clean_df['t']*0.5 < hour + 1)]
+    if frame_df.shape[0] > 10000:
+        frame_df = frame_df.sample(n=10000)
+    if not frame_df.empty:
+        sns.kdeplot(
+            data=frame_df, x="x", y="y",
+            fill=True, cmap="Reds", bw_adjust=1, gridsize=80, levels=25, 
+            ax=heatmap_ani_ax, alpha=0.5, 
+        )
+    heatmap_ani_ax.set_xlabel("")
+    heatmap_ani_ax.set_ylabel("")
+    heatmap_ani_ax.set_title(f"全域Heatmap (day={day}, hour={hour}:00~{hour+1}:00)")
+    heatmap_ani_ax.set_xlim(1, 200)
+    heatmap_ani_ax.set_ylim(1, 200)
+    heatmap_ani_ax.invert_yaxis()
+    heatmap_ani_ax.set_aspect('equal')
+    heatmap_ani_ax.grid(True, alpha=0.3)
+    heatmap_ani_ax.xaxis.set_major_locator(MultipleLocator(10))
+    heatmap_ani_ax.yaxis.set_major_locator(MultipleLocator(10))
+    print(f"分時Heatmap動畫進度: {frame+1}/120 (day={day}, hour={hour}:00~{hour+1}:00)", end='\r')
+
+heatmap_ani = anime.FuncAnimation(heatmap_ani_fig, update_heatmap, frames=5*24, init_func=init, repeat=False)
+heatmap_ani.save(f'./global_time_heatmap_day_hour.gif', fps=2, writer='pillow')
+print("全域分時Heatmap動畫 完成")
+
 plt.tight_layout()
 plt.show()
