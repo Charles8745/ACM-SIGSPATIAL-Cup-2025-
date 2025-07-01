@@ -11,7 +11,7 @@ matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
 # Global parameters
-city = "A"
+city = "C"
 csv_file = f"./Data/city_{city}_challengedata.csv"  
 specific_time = 7 # 設定要顯示時段的全域heatmap，間隔為specific_time~specific_time+specific_time_gap點
 specific_time_gap = 1 # 時段間隔
@@ -33,17 +33,43 @@ print(f"共有可用{cityB_clean_df.shape[0]}筆資料\n已移除{cityB_raw_df.s
 fig, axs = plt.subplots(2, 3, figsize=(30, 20))
 
 # 200*200 全域全時heatmap
-print("正在繪製全域全時Heatmap...")
-axs[0, 0].scatter(cityB_clean_df['x'], cityB_clean_df['y'], alpha=0.05, s=1, c='r')
-axs[0, 0].set_title("全域全時Heatmap")
+# print("正在繪製全域全時Heatmap...")
+# axs[0, 0].scatter(cityB_clean_df['x'], cityB_clean_df['y'], alpha=0.05, s=1, c='r')
+# axs[0, 0].set_title("全域全時Heatmap")
+# axs[0, 0].set_xlim(1, 200)
+# axs[0, 0].set_ylim(1, 200)
+# axs[0, 0].set_aspect('equal')
+# axs[0, 0].invert_yaxis()
+# axs[0, 0].grid(True, alpha=0.3)
+# axs[0, 0].xaxis.set_major_locator(MultipleLocator(10))
+# axs[0, 0].yaxis.set_major_locator(MultipleLocator(10))
+# print("全域全時Heatmap 完成")
+
+# 使用2D histogram顯示每個(x, y)座標的唯一使用者數，數值以10為底對數化
+xy_uid = cityB_clean_df.groupby(['x', 'y'])['uid'].nunique().reset_index()
+heatmap_data = np.zeros((200, 200), dtype=float)
+for _, row in xy_uid.iterrows():
+    # x, y座標從1開始，需減1對應到陣列索引
+    count = row['uid']
+    # 只對大於0的數值取log10，否則設為0
+    heatmap_data[int(row['y'])-1, int(row['x'])-1] = np.log10(count) if count > 0 else 0
+    
+im = axs[0, 0].imshow(
+    heatmap_data, 
+    cmap='Reds', 
+    origin='lower', 
+    extent=[1, 200, 1, 200],
+    aspect='equal'
+)
+axs[0, 0].set_title("每個(x, y)座標的唯一使用者數")
 axs[0, 0].set_xlim(1, 200)
 axs[0, 0].set_ylim(1, 200)
-axs[0, 0].set_aspect('equal')
 axs[0, 0].invert_yaxis()
 axs[0, 0].grid(True, alpha=0.3)
 axs[0, 0].xaxis.set_major_locator(MultipleLocator(10))
 axs[0, 0].yaxis.set_major_locator(MultipleLocator(10))
-print("全域全時Heatmap 完成")
+cbar = plt.colorbar(im, ax=axs[0, 0])
+cbar.set_label('唯一使用者數 (log10)')
 
 # 單人全時軌跡
 print("正在繪製單人全時軌跡...")
