@@ -2,6 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from DataVisualize_v2 import DataVisualizer as dv
+
 class DataPreprocessor:
     def __init__(self, data_path):
         self.data_path = data_path
@@ -13,7 +15,7 @@ class DataPreprocessor:
         """
         os.makedirs('./Training_Testing_Data', exist_ok=True)
 
-        # 找到 x=999 的所有 uid
+        # 找到x=999的最小uid
         split_point = self.raw_data_df[self.raw_data_df['x'] == 999]['uid'].unique().min()
         print(f"資料分割點: uid={split_point}\n")
 
@@ -45,3 +47,4 @@ if __name__ == "__main__":
     DataLoader = DataPreprocessor(data_path='./Data./city_D_challengedata.csv')
 
     x_train_df,_,_,_ = DataLoader.get_training_testing_data()
+    print(x_train_df)

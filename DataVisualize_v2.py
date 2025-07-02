@@ -177,6 +177,25 @@ class DataVisualizer:
         axs[1].xaxis.set_major_locator(MultipleLocator(7))
         axs[1].grid(True, alpha=0.3)
 
+    def User_count_distribution(self):
+        """
+        繪製每個使用者資料筆數的分布（boxplot），並顯示q1, mean, q2
+        """
+        user_counts = self.raw_csv_df.groupby('uid').size()
+        q1 = int(user_counts.quantile(0.25))
+        mean = int(user_counts.mean())
+        q3 = int(user_counts.quantile(0.75))
+        print(f"最大資料筆數的uid: {user_counts.idxmax()}, 最小資料筆數的uid: {user_counts.idxmin()}")
+        print(f"最大值: {user_counts.max()}, 最小值: {user_counts.min()}")
+        print(f"Q1: {q1}, Mean: {mean}, Q3: {q3}")
+
+        plt.figure(figsize=(4, 4))
+        sns.boxplot(x=user_counts)
+        sns.stripplot(x=user_counts, color="orange", jitter=0.2, size=1.5)
+        plt.xlabel("每個使用者的資料筆數")
+        plt.title(f"每個使用者資料筆數分布: Q1: {q1}, Mean: {mean}, Q3: {q3}")
+        plt.grid(True, axis='x', alpha=0.3)
+
 """
 測試程式碼
 """
@@ -190,11 +209,12 @@ if __name__ == "__main__":
     # DataLoader = DataVisualizer(data_input=test_df)
 
     # 或者從CSV檔案讀取資料
-    DataLoader = DataVisualizer(data_input='./Data/city_A_challengedata.csv')
+    DataLoader = DataVisualizer(data_input='./Data/city_D_challengedata.csv')
 
-    DataLoader.histogram2d()
-    DataLoader.single_user_trajectory(uid=3)  # 替換成你想要的uid
-    DataLoader.single_user_trajectory_animation(uid=3, fps=2, output_each_frame=True)  # 替換成你想要的uid
-    DataLoader.Everytimestamp_User_Count()
-    DataLoader.Everyday_User_Count()
+    # DataLoader.histogram2d()
+    # DataLoader.single_user_trajectory(uid=788)  # 替換成你想要的uid
+    # DataLoader.single_user_trajectory_animation(uid=788, fps=2, output_each_frame=True)  # 替換成你想要的uid
+    # DataLoader.Everytimestamp_User_Count()
+    # DataLoader.Everyday_User_Count()
+    DataLoader.User_count_distribution()
     plt.show()
