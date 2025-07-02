@@ -20,21 +20,21 @@ plt_show = True  # 是否顯示圖形
 Animation_show = False  # 是否顯示動畫
 heatmap_gif_day = 14 # 分時heatmap動畫的天數
 
-
 # Read the CSV file for City 
-cityB_raw_df = pd.read_csv(csv_file, header=0, dtype=int)
+city_raw_df = pd.read_csv(csv_file, header=0, dtype=int)
+
 
 # Clean the data by removing x or y = 999
-cityB_clean_df = cityB_raw_df[(cityB_raw_df['x'] != 999) & (cityB_raw_df['y'] != 999)]
-print(cityB_clean_df.tail())
-print(f"共有可用{cityB_clean_df.shape[0]}筆資料\n已移除{cityB_raw_df.shape[0] - cityB_clean_df.shape[0]}筆無效資料")
+city_clean_df = city_raw_df[(city_raw_df['x'] != 999) & (city_raw_df['y'] != 999)]
+print(city_clean_df.tail())
+print(f"共有可用{city_clean_df.shape[0]}筆資料\n已移除{city_raw_df.shape[0] - city_clean_df.shape[0]}筆無效資料")
 
 # Create subplot
 fig, axs = plt.subplots(2, 3, figsize=(30, 20))
 
 # 200*200 全域全時heatmap
 # print("正在繪製全域全時Heatmap...")
-# axs[0, 0].scatter(cityB_clean_df['x'], cityB_clean_df['y'], alpha=0.05, s=1, c='r')
+# axs[0, 0].scatter(city_clean_df['x'], city_clean_df['y'], alpha=0.05, s=1, c='r')
 # axs[0, 0].set_title("全域全時Heatmap")
 # axs[0, 0].set_xlim(1, 200)
 # axs[0, 0].set_ylim(1, 200)
@@ -46,7 +46,7 @@ fig, axs = plt.subplots(2, 3, figsize=(30, 20))
 # print("全域全時Heatmap 完成")
 
 # 使用2D histogram顯示每個(x, y)座標的唯一使用者數，數值以10為底對數化
-xy_uid = cityB_clean_df.groupby(['x', 'y'])['uid'].nunique().reset_index()
+xy_uid = city_clean_df.groupby(['x', 'y'])['uid'].nunique().reset_index()
 heatmap_data = np.zeros((200, 200), dtype=float)
 for _, row in xy_uid.iterrows():
     # x, y座標從1開始，需減1對應到陣列索引
@@ -73,7 +73,7 @@ cbar.set_label('唯一使用者數 (log10)')
 
 # 單人全時軌跡
 print("正在繪製單人全時軌跡...")
-person_df = cityB_clean_df[(cityB_clean_df['uid'] == uid)]
+person_df = city_clean_df[(city_clean_df['uid'] == uid)]
 axs[0, 1].plot(person_df['x'], person_df['y'], marker='o', markersize=2, linewidth=1, alpha=0.2, c="m")
 axs[0, 1].set_title(f"uid={uid} 的軌跡")
 x_min = math.floor(person_df['x'].min())
@@ -97,7 +97,7 @@ print("單人全時軌跡 完成")
 
 # 特定時段的的全域heatmap
 print("正在繪製特定時段全域Heatmap...")
-specific_time_heatmap_df = cityB_clean_df[(cityB_clean_df['t']*0.5 >= specific_time) & (cityB_clean_df['t']*0.5 < (specific_time + specific_time_gap)%24)]
+specific_time_heatmap_df = city_clean_df[(city_clean_df['t']*0.5 >= specific_time) & (city_clean_df['t']*0.5 < (specific_time + specific_time_gap)%24)]
 
 if specific_time_heatmap_df.shape[0] > 1000:
     print(f"共有{specific_time_heatmap_df.shape[0]}筆資料，超過1000，將隨機抽樣1000筆資料")
@@ -125,7 +125,7 @@ print("特定時段全域Heatmap 完成")
 
 # 每小時平均使用人數
 print("正在繪製每小時平均使用人數...")
-avg_hourly_users = cityB_clean_df.groupby('t')['uid'].count()
+avg_hourly_users = city_clean_df.groupby('t')['uid'].count()
 axs[1, 1].plot(avg_hourly_users.index, avg_hourly_users.values)
 axs[1, 1].set_xlabel("Hour")
 axs[1, 1].set_ylabel("No. Users")
@@ -138,7 +138,7 @@ print("每小時平均使用人數 完成")
 # 每日活耀人數變化
 less_than_days = 75  # 設定要顯示的天數
 print("正在繪製每日活耀人數變化(of unique users)...")
-daily_users = cityB_clean_df[cityB_clean_df['d'] <= less_than_days].groupby('d')['uid'].nunique()  
+daily_users = city_clean_df[city_clean_df['d'] <= less_than_days].groupby('d')['uid'].nunique()  
 axs[0, 2].plot(daily_users.index, daily_users.values)
 axs[0, 2].set_xlabel("Day")
 axs[0, 2].set_ylabel("No. Unique Users")
@@ -146,7 +146,7 @@ axs[0, 2].xaxis.set_major_locator(MultipleLocator(7))
 axs[0, 2].grid(True, alpha=0.3)
 print("正在繪製每日活耀人數變化(of unique users) 完成")
 print("正在繪製每日活耀人數變化(No. of Users)...")
-daily_users = cityB_clean_df[cityB_clean_df['d'] <= less_than_days].groupby('d')['uid'].count()
+daily_users = city_clean_df[city_clean_df['d'] <= less_than_days].groupby('d')['uid'].count()
 axs[1, 2].plot(daily_users.index, daily_users.values)
 axs[1, 2].set_xlabel("Day")
 axs[1, 2].set_ylabel("No. Users")
@@ -208,7 +208,7 @@ if Animation_show:
         heatmap_ani_ax.invert_yaxis()
         day = frame // 24 + 1  # 天數從1開始
         hour = frame % 24
-        frame_df = cityB_clean_df[(cityB_clean_df['d'] == day) & (cityB_clean_df['t']*0.5 >= hour) & (cityB_clean_df['t']*0.5 < hour + 1)]
+        frame_df = city_clean_df[(city_clean_df['d'] == day) & (city_clean_df['t']*0.5 >= hour) & (city_clean_df['t']*0.5 < hour + 1)]
         if frame_df.shape[0] > 50000:
             frame_df = frame_df.sample(n=50000)
         if not frame_df.empty:
