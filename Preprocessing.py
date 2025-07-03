@@ -8,6 +8,9 @@ class DataPreprocessor:
     def __init__(self, data_path):
         self.data_path = data_path
         self.raw_data_df = pd.read_csv(self.data_path)
+    
+    def get_raw_data(self):
+        return self.raw_data_df
 
     def get_training_testing_data(self):
         """
@@ -39,6 +42,17 @@ class DataPreprocessor:
         print("資料處理完成，已儲存在Training_Testing_Data資料夾中\n")
         return x_train_df, x_test_df, y_train_df, y_test_df
 
+    def sin_encode(self, df):
+        """
+        將時間欄位進行正弦編碼，將時間轉換為週期性特徵。
+        """
+        df['time_in_day_normalize'] = df['t'] / 48  # 正規化為 0~1
+        df['time_sin'] = np.sin(2 * np.pi * df['time_in_day_normalize'])
+
+        return df
+
+    def stability_analysis(self, df):
+        pass
 
 """
 測試程式碼
@@ -47,4 +61,5 @@ if __name__ == "__main__":
     DataLoader = DataPreprocessor(data_path='./Data./city_D_challengedata.csv')
 
     x_train_df,_,_,_ = DataLoader.get_training_testing_data()
-    print(x_train_df)
+    x_train_df = DataLoader.sin_encode(x_train_df)
+    print(x_train_df.head())
