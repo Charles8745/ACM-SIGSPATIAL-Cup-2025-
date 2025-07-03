@@ -40,7 +40,7 @@ class DataVisualizer:
             # 只對大於0的數值取log10，否則設為0
             heatmap_data[int(row['y'])-1, int(row['x'])-1] = np.log10(count) if count > 0 else 0
 
-        fig = plt.figure(figsize=(4, 4))
+        fig = plt.figure(figsize=(8, 4))
         ax = fig.add_subplot(111)
         im = ax.imshow(
             heatmap_data, 
@@ -49,7 +49,7 @@ class DataVisualizer:
             extent=[1, 200, 1, 200], 
             aspect='equal'
         )
-        ax.set_title("每個(x, y)座標的唯一使用者數")
+        ax.set_title(f"每個(x, y)座標的唯一使用者數 Day:{self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()}的軌跡 {xy_uid.shape[0]}點有資料", fontsize=18)
         ax.set_xlim(1, 200)
         ax.set_ylim(1, 200)
         ax.invert_yaxis()
@@ -57,7 +57,72 @@ class DataVisualizer:
         ax.xaxis.set_major_locator(MultipleLocator(10))
         ax.yaxis.set_major_locator(MultipleLocator(10))
         cbar = plt.colorbar(im, ax=ax)
-        cbar.set_label('唯一使用者數 (log10)')
+        cbar.set_label('唯一使用者數 (log10)',fontsize=14)
+
+    def histogram2d_animation(self, fps=2, output_each_frame=False, max_days=75):
+        """
+        依據每一天與每個小時繪製2D histogram動畫，顯示每天每個小時每個(x, y)座標的使用者數
+        """
+        os.makedirs('./Animations', exist_ok=True)
+        if output_each_frame:
+            os.makedirs('./Animations/histogram2d_each_frame', exist_ok=True)
+
+        ani_fig, ani_ax = plt.subplots(figsize=(12, 12))
+        ani_ax.set_xlim(1, 200)
+        ani_ax.set_ylim(1, 200)
+        ani_ax.invert_yaxis()
+        ani_ax.grid(True, alpha=0.3)
+        ani_ax.xaxis.set_major_locator(MultipleLocator(10))
+        ani_ax.yaxis.set_major_locator(MultipleLocator(10))
+
+        days = sorted(self.raw_csv_df[self.raw_csv_df['d'] <= max_days]['d'].unique())
+        # hours = sorted(self.raw_csv_df['t'].unique())
+        hours = np.arange(0, 24)  
+        frames = [(d, t) for d in days for t in hours]
+
+        def init():
+            ani_ax.clear()
+            ani_ax.set_xlim(1, 200)
+            ani_ax.set_ylim(1, 200)
+            ani_ax.invert_yaxis()
+            ani_ax.grid(True, alpha=0.3)
+            ani_ax.xaxis.set_major_locator(MultipleLocator(10))
+            ani_ax.yaxis.set_major_locator(MultipleLocator(10))
+
+        def update(i):
+            ani_ax.clear()
+            ani_ax.set_xlim(1, 200)
+            ani_ax.set_ylim(1, 200)
+            ani_ax.invert_yaxis()
+            ani_ax.grid(True, alpha=0.3)
+            ani_ax.xaxis.set_major_locator(MultipleLocator(10))
+            ani_ax.yaxis.set_major_locator(MultipleLocator(10))
+
+            current_day, current_hour = frames[i]
+            # frame_data = self.raw_csv_df[(self.raw_csv_df['d'] == current_day) & (self.raw_csv_df['t'] == current_hour)]
+            frame_data = self.raw_csv_df[(self.raw_csv_df['d'] == current_day) & (self.raw_csv_df['t'] >= current_hour*2) & (self.raw_csv_df['t'] < (current_hour + 1) * 2)]  # 每小時兩個時間點
+            xy_uid = frame_data.groupby(['x', 'y'])['uid'].count().reset_index()  # 不用nunique要算總數
+
+            heatmap_data = np.zeros((200, 200), dtype=float)
+            for _, row in xy_uid.iterrows():
+                count = row['uid']
+                heatmap_data[int(row['y'])-1, int(row['x'])-1] = np.log10(count) if count > 0 else 0
+
+            im = ani_ax.imshow(
+                heatmap_data,
+                cmap='Reds',
+                origin='lower',
+                extent=[1, 200, 1, 200],
+            )
+
+            ani_ax.set_title(f"Day:{current_day} Hour:{current_hour}~{current_hour+1} 每個(x, y)座標的使用者數", fontsize=16)
+            if output_each_frame:
+                ani_fig.savefig(f'./Animations/histogram2d_each_frame/histogram2d_day{current_day}_hour{current_hour}~{current_hour+1}.png')
+            print(f"2D histogram動畫進度: {i+1}/{len(frames)}", end='\r')
+
+        ani = anime.FuncAnimation(ani_fig, update, frames=len(frames), init_func=init, repeat=True)
+        ani.save('./Animations/histogram2d_by_day_hour_animation.gif', fps=fps, writer='pillow')
+        plt.title("2D histogram 每天每小時動畫")
 
     def single_user_trajectory(self, uid):
         user_df = self.raw_csv_df[self.raw_csv_df['uid'] == uid]
@@ -68,7 +133,9 @@ class DataVisualizer:
         fig = plt.figure(figsize=(4, 4))
         ax = fig.add_subplot(111)
         ax.plot(user_df['x'], user_df['y'], marker='o', markersize=2, linestyle='-', alpha=0.2, c="r")
-        ax.set_title(f"UID:{uid} Day:{user_df['d'].min()}~{user_df['d'].max()}的軌跡，共有{user_df.shape[0]}筆資料")
+        ax.set_title(f"UID:{uid} Day:{user_df['d'].min()}~{user_df['d'].max()}的軌跡，共有{user_df.shape[0]}筆資料", fontsize=18)
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=10)
         ax.set_xlim(1, 200)
         ax.set_ylim(1, 200)
         ax.invert_yaxis()
@@ -113,7 +180,9 @@ class DataVisualizer:
             ani_ax.grid(True, alpha=0.3)
             ani_ax.xaxis.set_major_locator(MultipleLocator(10))
             ani_ax.yaxis.set_major_locator(MultipleLocator(10))
-            ani_ax.set_title(f"uid={uid} 第{user_df.iloc[i]['d']}天 {user_df.iloc[i]['t']*0.5}點鐘 ")
+            ani_ax.tick_params(axis='x', labelsize=10)
+            ani_ax.tick_params(axis='y', labelsize=10)
+            ani_ax.set_title(f"uid={uid} 第{user_df.iloc[i]['d']}天 {user_df.iloc[i]['t']*0.5}點鐘 ", fontsize=18)
             if output_each_frame:
                 ani_fig.savefig(f'./Animations/uid_{uid}_each_frame/uid_{uid}_day{user_df.iloc[i]["d"]}_time{user_df.iloc[i]["t"]*0.5}.png')
             print(f"單人分時軌跡動畫進度: {i+1}/{user_df.shape[0]}", end='\r')
@@ -133,9 +202,9 @@ class DataVisualizer:
 
         hourly_user_count = self.raw_csv_df.groupby('t')['uid'].count()
         axs[0].plot(hourly_user_count.index, hourly_user_count.values, marker='o')
-        axs[0].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}")
-        axs[0].set_xlabel("小時*0.5")
-        axs[0].set_ylabel("No. Users")
+        axs[0].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}",fontsize=18)
+        axs[0].set_xlabel("小時*0.5", fontsize=14)
+        axs[0].set_ylabel("No. Users", fontsize=14)
         axs[0].set_xlim(0, self.raw_csv_df['t'].max())
         axs[0].xaxis.set_major_locator(MultipleLocator(1))
         axs[0].yaxis.set_major_locator(AutoLocator())
@@ -143,9 +212,9 @@ class DataVisualizer:
 
         hourly_unique_user_count = self.raw_csv_df.groupby('t')['uid'].nunique()
         axs[1].plot(hourly_unique_user_count.index, hourly_unique_user_count.values, marker='o', color='orange')
-        axs[1].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}")
-        axs[1].set_xlabel("小時*0.5")
-        axs[1].set_ylabel("No. Unique Users")
+        axs[1].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
+        axs[1].set_xlabel("小時*0.5", fontsize=14)
+        axs[1].set_ylabel("No. Unique Users", fontsize=14)
         axs[1].set_xlim(0, self.raw_csv_df['t'].max())
         axs[1].xaxis.set_major_locator(MultipleLocator(1))
         axs[1].yaxis.set_major_locator(AutoLocator())
@@ -159,9 +228,9 @@ class DataVisualizer:
     
         daily_users = self.raw_csv_df.groupby('d')['uid'].count()
         axs[0].plot(daily_users.index, daily_users.values, color='blue')
-        axs[0].set_xlabel("Day")
-        axs[0].set_ylabel("No. Users")
-        axs[0].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}")
+        axs[0].set_xlabel("Day", fontsize=14)
+        axs[0].set_ylabel("No. Users", fontsize=14)
+        axs[0].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
         axs[0].set_xlim(self.raw_csv_df['d'].min(), self.raw_csv_df['d'].max())
         axs[0].yaxis.set_major_locator(AutoLocator())
         axs[0].xaxis.set_major_locator(MultipleLocator(7))
@@ -169,9 +238,9 @@ class DataVisualizer:
 
         daily_unique_users = self.raw_csv_df.groupby('d')['uid'].nunique()
         axs[1].plot(daily_unique_users.index, daily_unique_users.values, color='orange')
-        axs[1].set_xlabel("Day")
-        axs[1].set_ylabel("No. Unique Users")
-        axs[1].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}")
+        axs[1].set_xlabel("Day", fontsize=14)
+        axs[1].set_ylabel("No. Unique Users", fontsize=14)
+        axs[1].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
         axs[1].set_xlim(self.raw_csv_df['d'].min(), self.raw_csv_df['d'].max())
         axs[1].yaxis.set_major_locator(AutoLocator())
         axs[1].xaxis.set_major_locator(MultipleLocator(7))
@@ -191,10 +260,12 @@ class DataVisualizer:
 
         plt.figure(figsize=(4, 4))
         sns.boxplot(x=user_counts)
-        sns.stripplot(x=user_counts, color="orange", jitter=0.2, size=1.5)
-        plt.xlabel("每個使用者的資料筆數")
-        plt.title(f"每個使用者資料筆數分布: Q1: {q1}, Mean: {mean}, Q3: {q3}")
+        sns.stripplot(x=user_counts, color="orange", jitter=0.2, size=1.5, alpha=0.5)
+        plt.xlabel("每個使用者的資料筆數", fontsize=18)
+        plt.title(f"每個使用者資料筆數分布: Q1: {q1}, Mean: {mean}, Q3: {q3}", fontsize=18)
         plt.grid(True, axis='x', alpha=0.3)
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
 
 """
 測試程式碼
@@ -211,10 +282,11 @@ if __name__ == "__main__":
     # 或者從CSV檔案讀取資料
     DataLoader = DataVisualizer(data_input='./Data/city_D_challengedata.csv')
 
-    # DataLoader.histogram2d()
-    # DataLoader.single_user_trajectory(uid=788)  # 替換成你想要的uid
-    # DataLoader.single_user_trajectory_animation(uid=788, fps=2, output_each_frame=True)  # 替換成你想要的uid
-    # DataLoader.Everytimestamp_User_Count()
-    # DataLoader.Everyday_User_Count()
+    DataLoader.histogram2d()
+    DataLoader.histogram2d_animation(fps=2, output_each_frame=True, max_days=2) # 替換成你想要輸出的天數[1:max_days]
+    DataLoader.single_user_trajectory(uid=17482)  # 替換成你想要的uid
+    DataLoader.single_user_trajectory_animation(uid=17482, fps=2, output_each_frame=True)  # 替換成你想要的uid
+    DataLoader.Everytimestamp_User_Count()
+    DataLoader.Everyday_User_Count()
     DataLoader.User_count_distribution()
     plt.show()
