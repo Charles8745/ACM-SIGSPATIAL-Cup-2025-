@@ -238,7 +238,7 @@ class DataVisualizer:
         axs[0].plot(daily_users.index, daily_users.values, color='blue')
         axs[0].set_xlabel("Day", fontsize=14)
         axs[0].set_ylabel("No. Users", fontsize=14)
-        axs[0].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
+        axs[0].set_title(f"Days: {daily_users.index.min()}~{daily_users.index.max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
         axs[0].set_xlim(daily_users.index.min(), daily_users.index.max())
         axs[0].yaxis.set_major_locator(AutoLocator())
         axs[0].grid(True, alpha=0.3)
@@ -255,7 +255,7 @@ class DataVisualizer:
         axs[1].plot(daily_unique_users.index, daily_unique_users.values, color='orange')
         axs[1].set_xlabel("Day", fontsize=14)
         axs[1].set_ylabel("No. Unique Users", fontsize=14)
-        axs[1].set_title(f"Days: {self.raw_csv_df['d'].min()}~{self.raw_csv_df['d'].max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
+        axs[1].set_title(f"Days: {daily_users.index.min()}~{daily_users.index.max()} UID: {self.raw_csv_df['uid'].min()}~{self.raw_csv_df['uid'].max()}", fontsize=18)
         axs[1].set_xlim(daily_unique_users.index.min(), daily_unique_users.index.max())
         axs[1].yaxis.set_major_locator(AutoLocator())
         axs[1].grid(True, alpha=0.3)
@@ -294,13 +294,13 @@ if __name__ == "__main__":
     # DataLoader = DataVisualizer(data_input=test_df)
 
     # 或者從CSV檔案讀取資料
-    DataLoader = DataVisualizer(data_input='./Data/city_D_challengedata.csv')
+    DataLoader = DataVisualizer(data_input='./Data/city_B_challengedata.csv')
 
     # DataLoader.histogram2d()
     # DataLoader.histogram2d_animation(fps=2, output_each_frame=True, max_days=2) # 替換成你想要輸出的天數[1:max_days]
     # DataLoader.single_user_trajectory(uid=17482)  # 替換成你想要的uid
     # DataLoader.single_user_trajectory_animation(uid=17482, fps=2, output_each_frame=True)  # 替換成你想要的uid
     # DataLoader.Everytimestamp_User_Count()
-    # DataLoader.Everyday_User_Count(Zoom_mode=True, start_day=28, end_day=40)  # 替換成你想要的天數範圍
+    DataLoader.Everyday_User_Count(Zoom_mode=True, start_day=61, end_day=75)  # 替換成你想要的天數範圍
     # DataLoader.User_count_distribution()
     plt.show()
