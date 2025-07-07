@@ -156,7 +156,7 @@ class DataPreprocessor:
 
         return working_day_std_df, non_working_day_std_df
 
-    def stability_analysis_trajectories(self, df, city_name, dataset_prefix):
+    def stability_analysis_trajectories(self, df_path, std_df_path, city_name, dataset_prefix):
         """
         對每個人在工作日的 x, y 軌跡做 DTW 分析（使用 fastdtw）。
         只抓 8 點到 18 點的資料，先計算代表性軌跡（最小總DTW距離的那一天），再對每一天的軌跡做 DTW。
@@ -164,16 +164,20 @@ class DataPreprocessor:
         顯示預估剩餘時間。
         """
         os.makedirs('./Stability', exist_ok=True)
+        df = pd.read_csv(df_path)
+        std_df = pd.read_csv(std_df_path)
 
-        # 如果df是路徑，則讀取csv
-        if isinstance(df, str):
-            df = pd.read_csv(df)
         # 確保working_day為int型態
         if df['working_day'].dtype != int:
             df['working_day'] = df['working_day'].astype(int)
 
-        # 選取工作日且時間在8~18點的資料
-        working_day_df = df[(df['working_day'] == 1)]
+        # 選取工作日且時間在8~18點的資料，且x_std_mean和y_std_mean為>5 <20的資料(5以下穩定20以上混亂就不計算)
+        valid_uids = std_df[
+            std_df['x_std_mean'].between(5, 20) & std_df['y_std_mean'].between(5, 20)
+        ]['uid'].unique()
+
+        # 選取工作日且時間在8~18點且uid在valid_uids的資料
+        working_day_df = df[(df['working_day'] == 1) & (df['uid'].isin(valid_uids))]
         uid_count = working_day_df['uid'].nunique()
         count = 0
         results = []
@@ -241,7 +245,7 @@ class DataPreprocessor:
             est_sec = int(est_sec % 60)
             print(f"處理進度: {count}/{uid_count} (uid={uid})，預估剩餘時間: {est_min}分{est_sec}秒", end='\r')
             # 提早結束測試
-            if count == 3: break
+            if count == 100: break
 
         dtw_df = pd.DataFrame(results)
         dtw_df.to_csv(f'./Stability/{city_name}_{dataset_prefix}train_working_day_dtw.csv', index=False)
@@ -259,7 +263,10 @@ if __name__ == "__main__":
     # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
     # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     # print(x_train_df.head())
-    DataLoader.stability_analysis_trajectories(f"./Training_Testing_Data/{test_city_name}_x_train.csv", city_name=test_city_name, dataset_prefix='x')
+    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
+                                               std_df_path=f"./Stability/{test_city_name}_xtrain_working_day_stability.csv",
+                                               city_name=test_city_name, 
+                                               dataset_prefix='x')
 
     # visual_tool = dv(data_input='./Training_Testing_Data/A_x_train.csv')
     # visual_tool.single_user_trajectory(uid=3)
