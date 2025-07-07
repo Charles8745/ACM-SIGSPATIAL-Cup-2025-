@@ -2,7 +2,10 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import fastdtw
 from DataVisualize_v2 import DataVisualizer as dv
+from fastdtw import fastdtw
+import time
 
 class DataPreprocessor:
     def __init__(self, city_name, data_input):
@@ -82,16 +85,10 @@ class DataPreprocessor:
         print("資料處理完成，已儲存在Training_Testing_Data資料夾中\n")
         return x_train_df, x_test_df, y_train_df, y_test_df
 
-    def sin_encode(self, df):
+    def stability_analysis_std(self, df, city_name, dataset_prefix):
         """
-        將時間欄位進行正弦編碼，將時間轉換為週期性特徵。
+        歐式距離std計算，並儲存工作日和非工作日的標準差資料。
         """
-        df['time_in_day_normalize'] = df['t'] / 48  # 正規化為 0~1
-        df['time_sin'] = np.sin(2 * np.pi * df['time_in_day_normalize'])
-
-        return df
-
-    def stability_analysis(self, df, city_name, dataset_prefix):
         os.makedirs('./Stability', exist_ok=True)
 
         # 計算每個uid在每個時間段的x, y標準差
@@ -143,28 +140,122 @@ class DataPreprocessor:
 
         return working_day_std_df, non_working_day_std_df
 
+    def stability_analysis_trajectories(self, df, city_name, dataset_prefix):
+        """
+        對每個人在工作日的 x, y 軌跡做 DTW 分析（使用 fastdtw）。
+        只抓 8 點到 18 點的資料，先計算代表性軌跡（最小總DTW距離的那一天），再對每一天的軌跡做 DTW。
+        結果儲存每個人每天的 DTW 距離，並加上該 uid 的 DTW 平均值。
+        顯示預估剩餘時間。
+        """
+        os.makedirs('./Stability', exist_ok=True)
+
+        # 如果df是路徑，則讀取csv
+        if isinstance(df, str):
+            df = pd.read_csv(df)
+        # 確保working_day為int型態
+        if df['working_day'].dtype != int:
+            df['working_day'] = df['working_day'].astype(int)
+
+        # 選取工作日且時間在8~18點的資料
+        working_day_df = df[(df['working_day'] == 1)]
+        uid_count = working_day_df['uid'].nunique()
+        count = 0
+        results = []
+
+        start_time = time.time()
+        for uid, group in working_day_df.groupby('uid'):
+            iter_start = time.time()
+            days = np.sort(group['d'].unique())
+            t_range = np.arange(16, 37)  # 16~36對應8點到18點
+
+            # 先用mean的方式計算初始代表軌跡
+            mean_traj = []
+            for t in t_range:
+                sub = group[group['t'] == t]
+                if not sub.empty:
+                    mean_traj.append([sub['x'].mean(), sub['y'].mean()])
+                else:
+                    mean_traj.append([0, 0])  # 如果沒有資料，則填0
+
+            # 準備所有天的軌跡
+            day_trajs = []
+            for day in days:
+                sub_day = group[group['d'] == day]
+                traj = []
+                for idx, t in enumerate(t_range):
+                    sub = sub_day[sub_day['t'] == t]
+                    if not sub.empty:
+                        xy = [sub['x'].values[0], sub['y'].values[0]]
+                        traj.append(xy)
+                    else: # 若有nan則用mean_traj補
+                        xy = [mean_traj[idx][0], mean_traj[idx][1]]
+                        traj.append(xy)
+                day_trajs.append(np.array(traj))
+
+            # 計算DTW距離矩陣
+            n_days = len(day_trajs)
+            dtw_matrix = np.zeros((n_days, n_days))
+            for i in range(n_days):
+                for j in range(i+1, n_days):
+                    dist, _ = fastdtw(day_trajs[i], day_trajs[j])
+                    dtw_matrix[i, j] = dist
+                    dtw_matrix[j, i] = dist
+
+            # 找出代表軌跡（總距離最小的那一天）
+            total_dists = dtw_matrix.sum(axis=1)
+            rep_idx = np.argmin(total_dists)
+            rep_traj = day_trajs[rep_idx]
+
+            # 計算每一天與代表軌跡的DTW距離
+            uid_distances = []
+            for idx, day in enumerate(days):
+                distance, _ = fastdtw(day_trajs[idx], rep_traj)
+                results.append({'uid': uid, 'd': day, 'dtw_distance': round(distance, 2)})
+                uid_distances.append(distance)
+
+            # 加上該 uid 的 DTW 平均值
+            dtw_mean = np.mean(uid_distances) if uid_distances else 0
+            for i in range(len(days)):
+                results[-len(days)+i]['dtw_mean'] = round(dtw_mean, 2)
+
+            count += 1
+            elapsed = time.time() - start_time
+            avg_per_uid = elapsed / count
+            remaining = uid_count - count
+            est_sec = avg_per_uid * remaining
+            est_min = int(est_sec // 60)
+            est_sec = int(est_sec % 60)
+            print(f"處理進度: {count}/{uid_count} (uid={uid})，預估剩餘時間: {est_min}分{est_sec}秒", end='\r')
+            # 提早結束測試
+            if count == 3: break
+
+        dtw_df = pd.DataFrame(results)
+        dtw_df.to_csv(f'./Stability/{city_name}_{dataset_prefix}train_working_day_dtw.csv', index=False)
+        print(f"\nDTW分析結果已儲存至 ./Stability/{city_name}_{dataset_prefix}train_working_day_dtw.csv")
+        return dtw_df
 
 """
 測試程式碼
 """
 if __name__ == "__main__":
-    # test_city_name = 'D'
-    # DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
+    test_city_name = 'A'
+    DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
-    # x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
-    # _, _=DataLoader.stability_analysis(x_train_df, city_name=test_city_name,dataset_prefix='x')
-    # _, _=DataLoader.stability_analysis(y_train_df, city_name=test_city_name,dataset_prefix='y')
+    x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
+    _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
+    _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     # print(x_train_df.head())
+    # DataLoader.stability_analysis_trajectories(f"./Training_Testing_Data/{test_city_name}_x_train.csv", city_name=test_city_name, dataset_prefix='x')
 
-    visual_tool = dv(data_input='./Training_Testing_Data/A_x_train.csv')
-    visual_tool.single_user_trajectory(uid=3)
+    # visual_tool = dv(data_input='./Training_Testing_Data/A_x_train.csv')
+    # visual_tool.single_user_trajectory(uid=3)
     # visual_tool.single_user_trajectory_animation(uid=3, fps=4, output_each_frame=True)
     # visual_tool.single_user_trajectory_animation(uid=35, fps=4, output_each_frame=False)
     # visual_tool.single_user_trajectory_animation(uid=6, fps=4, output_each_frame=False)
     # visual_tool.single_user_trajectory_animation(uid=283, fps=4, output_each_frame=False)
     # visual_tool.single_user_trajectory_animation(uid=704, fps=4, output_each_frame=False)
     # visual_tool.single_user_trajectory_animation(uid=14, fps=4, output_each_frame=False)
-    plt.show()
+    # plt.show()
     
     # 計算標準差平均值
     # std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv')
@@ -175,3 +266,4 @@ if __name__ == "__main__":
     # uid_std_mean['y_std'] = uid_std_mean['y_std'].round(1)
     # uid_std_mean.to_csv('./A_xtrain_working_day_std_mean.csv', index=False)
     # print(uid_std_mean.head())
+    
