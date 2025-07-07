@@ -178,7 +178,6 @@ class DataPreprocessor:
         對每個人在工作日的 x, y 軌跡做 DTW 分析（使用 fastdtw）。
         只抓 8 點到 18 點的資料，先計算代表性軌跡（最小總DTW距離的那一天），再對每一天的軌跡做 DTW。
         結果儲存每個人每天的 DTW 距離，並加上該 uid 的 DTW 平均值。
-        顯示預估剩餘時間。
         """
         os.makedirs('./Stability', exist_ok=True)
         df = pd.read_csv(df_path)
