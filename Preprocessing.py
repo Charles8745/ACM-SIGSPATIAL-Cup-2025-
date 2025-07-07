@@ -88,10 +88,10 @@ class DataPreprocessor:
     def stability_analysis_std(self, df, city_name, dataset_prefix):
         """
         歐式距離std計算，並儲存工作日和非工作日的標準差資料。
+        新增x_std_mean, y_std_mean欄位（每個uid的x_std/y_std平均值），計算時忽略值為0的情況。
         """
         os.makedirs('./Stability', exist_ok=True)
 
-        # 計算每個uid在每個時間段的x, y標準差
         # 工作日的標準差
         working_day_df = df[df['working_day'] == 1]
         working_day_std_df = working_day_df.groupby(['uid', 't']).agg(
@@ -111,6 +111,16 @@ class DataPreprocessor:
         for col in ['x_mean', 'x_std', 'y_mean', 'y_std']:
             if col in working_day_std_df.columns:
                 working_day_std_df[col] = working_day_std_df[col].round(1)
+
+        # 新增x_std_mean, y_std_mean欄位（忽略0）
+        def mean_ignore_zero(series):
+            nonzero = series[series != 0]
+            return nonzero.mean() if not nonzero.empty else 0
+
+        x_std_mean_map = working_day_std_df.groupby('uid')['x_std'].apply(mean_ignore_zero).round(2)
+        y_std_mean_map = working_day_std_df.groupby('uid')['y_std'].apply(mean_ignore_zero).round(2)
+        working_day_std_df['x_std_mean'] = working_day_std_df['uid'].map(x_std_mean_map)
+        working_day_std_df['y_std_mean'] = working_day_std_df['uid'].map(y_std_mean_map)
 
         working_day_std_df.to_csv(f'./Stability/{city_name}_{dataset_prefix}train_working_day_stability.csv', index=False)
         print(f"工作日標準差資料已儲存至 ./Stability/{city_name}_{dataset_prefix}train_working_day_stability.csv")
@@ -134,6 +144,12 @@ class DataPreprocessor:
         for col in ['x_mean', 'x_std', 'y_mean', 'y_std']:
             if col in non_working_day_std_df.columns:
                 non_working_day_std_df[col] = non_working_day_std_df[col].round(1)
+
+        # 新增x_std_mean, y_std_mean欄位（忽略0）
+        x_std_mean_map = non_working_day_std_df.groupby('uid')['x_std'].apply(mean_ignore_zero).round(2)
+        y_std_mean_map = non_working_day_std_df.groupby('uid')['y_std'].apply(mean_ignore_zero).round(2)
+        non_working_day_std_df['x_std_mean'] = non_working_day_std_df['uid'].map(x_std_mean_map)
+        non_working_day_std_df['y_std_mean'] = non_working_day_std_df['uid'].map(y_std_mean_map)
 
         non_working_day_std_df.to_csv(f'./Stability/{city_name}_{dataset_prefix}train_non_working_day_stability.csv', index=False)
         print(f"非工作日標準差資料已儲存至 ./Stability/{city_name}_{dataset_prefix}train_non_working_day_stability.csv")
@@ -162,7 +178,6 @@ class DataPreprocessor:
         count = 0
         results = []
 
-        start_time = time.time()
         for uid, group in working_day_df.groupby('uid'):
             iter_start = time.time()
             days = np.sort(group['d'].unique())
@@ -219,10 +234,9 @@ class DataPreprocessor:
                 results[-len(days)+i]['dtw_mean'] = round(dtw_mean, 2)
 
             count += 1
-            elapsed = time.time() - start_time
-            avg_per_uid = elapsed / count
+            elapsed = time.time() - iter_start
             remaining = uid_count - count
-            est_sec = avg_per_uid * remaining
+            est_sec = elapsed * remaining
             est_min = int(est_sec // 60)
             est_sec = int(est_sec % 60)
             print(f"處理進度: {count}/{uid_count} (uid={uid})，預估剩餘時間: {est_min}分{est_sec}秒", end='\r')
@@ -241,11 +255,11 @@ if __name__ == "__main__":
     test_city_name = 'A'
     DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
-    x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
-    _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
-    _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
+    # x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
+    # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
+    # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     # print(x_train_df.head())
-    # DataLoader.stability_analysis_trajectories(f"./Training_Testing_Data/{test_city_name}_x_train.csv", city_name=test_city_name, dataset_prefix='x')
+    DataLoader.stability_analysis_trajectories(f"./Training_Testing_Data/{test_city_name}_x_train.csv", city_name=test_city_name, dataset_prefix='x')
 
     # visual_tool = dv(data_input='./Training_Testing_Data/A_x_train.csv')
     # visual_tool.single_user_trajectory(uid=3)
