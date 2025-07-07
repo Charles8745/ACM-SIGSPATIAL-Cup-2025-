@@ -294,13 +294,13 @@ if __name__ == "__main__":
     # DataLoader = DataVisualizer(data_input=test_df)
 
     # 或者從CSV檔案讀取資料
-    DataLoader = DataVisualizer(data_input='./Data/city_B_challengedata.csv')
+    DataLoader = DataVisualizer(data_input='./Data/city_D_challengedata.csv')
 
     # DataLoader.histogram2d()
-    # DataLoader.histogram2d_animation(fps=2, output_each_frame=True, max_days=2) # 替換成你想要輸出的天數[1:max_days]
-    # DataLoader.single_user_trajectory(uid=17482)  # 替換成你想要的uid
-    # DataLoader.single_user_trajectory_animation(uid=17482, fps=2, output_each_frame=True)  # 替換成你想要的uid
+    # DataLoader.histogram2d_animation(fps=2, output_each_frame=True, max_days=3) # 替換成你想要輸出的天數[1:max_days]
+    # DataLoader.single_user_trajectory(uid=3)  # 替換成你想要的uid
+    # DataLoader.single_user_trajectory_animation(uid=3, fps=2, output_each_frame=True)  # 替換成你想要的uid
     # DataLoader.Everytimestamp_User_Count()
-    DataLoader.Everyday_User_Count(Zoom_mode=True, start_day=61, end_day=75)  # 替換成你想要的天數範圍
+    DataLoader.Everyday_User_Count(Zoom_mode=True, start_day=28, end_day=40)  # 替換成你想要的天數範圍
     # DataLoader.User_count_distribution()
     plt.show()
