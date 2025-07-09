@@ -173,9 +173,9 @@ class DataPreprocessor:
 
         return working_day_std_df, non_working_day_std_df
 
-    def stability_analysis_trajectories(self, df_path, std_df_path, city_name, output_name, dataset_prefix):
+    def stability_analysis_trajectories(self, df_path, std_df_path, output_name, IsWorkingDay=True):
         """
-        對每個人在工作日的 x, y 軌跡做 DTW 分析（使用 fastdtw）。
+        對每個人的 x, y 軌跡做 DTW 分析（使用 fastdtw）。
         只抓 8 點到 18 點的資料，先計算代表性軌跡（最小總DTW距離的那一天），再對每一天的軌跡做 DTW。
         結果儲存每個人每天的 DTW 距離，並加上該 uid 的 DTW 平均值。
         """
@@ -187,13 +187,16 @@ class DataPreprocessor:
         if df['working_day'].dtype != int:
             df['working_day'] = df['working_day'].astype(int)
 
-        # 選取工作日且時間在8~18點的資料，且x_std_mean和y_std_mean為>5 <20的資料(5以下穩定20以上混亂就不計算)
+        # 選取x_std_mean和y_std_mean為>5 <20的資料(5以下穩定20以上混亂就不計算)
         valid_uids = std_df[
             std_df['x_std_mean'].between(5, 20) & std_df['y_std_mean'].between(5, 20)
         ]['uid'].unique()
 
-        # 選取工作日且時間在8~18點且uid在valid_uids的資料
-        working_day_df = df[(df['working_day'] == 1) & (df['uid'].isin(valid_uids))]
+        # 判斷是否為工作日且uid在valid_uids的資料
+        if IsWorkingDay:
+            working_day_df = df[(df['working_day'] == 1) & (df['uid'].isin(valid_uids))]
+        else:
+            working_day_df = df[(df['working_day'] == 0) & (df['uid'].isin(valid_uids))]
         uid_count = working_day_df['uid'].nunique()
         count = 0
         results = []
@@ -279,29 +282,29 @@ if __name__ == "__main__":
     # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
     # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     # print(x_train_df.head())
-    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
-                                               std_df_path=f"./Stability/{test_city_name}_xtrain_working_day_stability.csv",
-                                               output_name=f"{test_city_name}_xtrain_working_day_dtw.csv",
-                                               city_name=test_city_name, 
-                                               dataset_prefix='x')
+    # DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
+    #                                            std_df_path=f"./Stability/{test_city_name}_xtrain_working_day_stability.csv",
+    #                                            output_name=f"{test_city_name}_xtrain_working_day_dtw.csv",
+    #                                            IsWorkingDay=True
+    #                                            )
 
     DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
                                             std_df_path=f"./Stability/{test_city_name}_xtrain_non_working_day_stability.csv",
-                                            output_name=f"{test_city_name}_xtrain_non_working_day_dtw.csv",
-                                            city_name=test_city_name, 
-                                            dataset_prefix='x')
+                                            output_name=f"{test_city_name}_xtrain_non_working_day_dtw.csv", 
+                                            IsWorkingDay=False
+                                            )
 
-    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
-                                               std_df_path=f"./Stability/{test_city_name}_ytrain_working_day_stability.csv",
-                                               output_name=f"{test_city_name}_ytrain_working_day_dtw.csv",
-                                               city_name=test_city_name, 
-                                               dataset_prefix='y')
+    # DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
+    #                                            std_df_path=f"./Stability/{test_city_name}_ytrain_working_day_stability.csv",
+    #                                            output_name=f"{test_city_name}_ytrain_working_day_dtw.csv",
+    #                                            IsWorkingDay=True
+    #                                            )
 
     DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
                                             std_df_path=f"./Stability/{test_city_name}_ytrain_non_working_day_stability.csv",
                                             output_name=f"{test_city_name}_ytrain_non_working_day_dtw.csv",
-                                            city_name=test_city_name, 
-                                            dataset_prefix='y')
+                                            IsWorkingDay=False
+                                            )
 
     # visual_tool = dv(data_input='./Training_Testing_Data/A_x_train.csv')
     # visual_tool.single_user_trajectory(uid=3)
