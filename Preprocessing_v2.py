@@ -275,40 +275,45 @@ class DataPreprocessor:
 測試程式碼
 """
 if __name__ == "__main__":
-    test_city_name = 'B'
-    DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
+    test_city_name = 'A'
+    # DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
-    x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
-    _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
-    _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
+    # x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
+    # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
+    # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     
-    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
-                                               std_df_path=f"./Stability/{test_city_name}_xtrain_working_day_stability.csv",
-                                               output_name=f"{test_city_name}_xtrain_working_day_dtw.csv",
-                                               IsWorkingDay=True
-                                               )
+    # DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
+    #                                            std_df_path=f"./Stability/{test_city_name}_xtrain_working_day_stability.csv",
+    #                                            output_name=f"{test_city_name}_xtrain_working_day_dtw.csv",
+    #                                            IsWorkingDay=True
+    #                                            )
 
-    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
-                                            std_df_path=f"./Stability/{test_city_name}_xtrain_non_working_day_stability.csv",
-                                            output_name=f"{test_city_name}_xtrain_non_working_day_dtw.csv", 
-                                            IsWorkingDay=False
-                                            )
+    # DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_x_train.csv", 
+    #                                         std_df_path=f"./Stability/{test_city_name}_xtrain_non_working_day_stability.csv",
+    #                                         output_name=f"{test_city_name}_xtrain_non_working_day_dtw.csv", 
+    #                                         IsWorkingDay=False
+    #                                         )
 
-    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
-                                               std_df_path=f"./Stability/{test_city_name}_ytrain_working_day_stability.csv",
-                                               output_name=f"{test_city_name}_ytrain_working_day_dtw.csv",
-                                               IsWorkingDay=True
-                                               )
+    # DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
+    #                                            std_df_path=f"./Stability/{test_city_name}_ytrain_working_day_stability.csv",
+    #                                            output_name=f"{test_city_name}_ytrain_working_day_dtw.csv",
+    #                                            IsWorkingDay=True
+    #                                            )
 
-    DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
-                                            std_df_path=f"./Stability/{test_city_name}_ytrain_non_working_day_stability.csv",
-                                            output_name=f"{test_city_name}_ytrain_non_working_day_dtw.csv",
-                                            IsWorkingDay=False
-                                            )
+    # DataLoader.stability_analysis_trajectories(df_path=f"./Training_Testing_Data/{test_city_name}_y_train.csv", 
+    #                                         std_df_path=f"./Stability/{test_city_name}_ytrain_non_working_day_stability.csv",
+    #                                         output_name=f"{test_city_name}_ytrain_non_working_day_dtw.csv",
+    #                                         IsWorkingDay=False
+    #                                         )
 
+    # 可視化工具
     # visual_tool = dv(data_input='./Training_Testing_Data/A_x_train.csv')
-    # visual_tool.single_user_trajectory(uid=3)
-    # visual_tool.single_user_trajectory_animation(uid=3, fps=4, output_each_frame=True)
+    # visual_tool.single_user_trajectory(uid=33)
+    # visual_tool.single_user_trajectory_animation(uid=33, fps=4, output_each_frame=True)
+    # visual_tool.single_user_trajectory(uid=94)
+    # visual_tool.single_user_trajectory_animation(uid=94, fps=4, output_each_frame=True)
+    # visual_tool.single_user_trajectory(uid=630)
+    # visual_tool.single_user_trajectory_animation(uid=630, fps=4, output_each_frame=True)
     # visual_tool.single_user_trajectory_animation(uid=35, fps=4, output_each_frame=False)
     # visual_tool.single_user_trajectory_animation(uid=6, fps=4, output_each_frame=False)
     # visual_tool.single_user_trajectory_animation(uid=283, fps=4, output_each_frame=False)
@@ -326,3 +331,44 @@ if __name__ == "__main__":
     # uid_std_mean.to_csv('./A_xtrain_working_day_std_mean.csv', index=False)
     # print(uid_std_mean.head())
     
+    # 抓出dtw距離大於10的uid
+    # dtw_df = pd.read_csv('./Stability/A_xtrain_working_day_dtw.csv')
+    # dtw_df = dtw_df[(dtw_df['dtw_mean'] > 10) & (dtw_df['dtw_mean'] < 20)]['uid'].unique()
+    # print(dtw_df[:10])
+
+    # # 統計資料 std
+    # df_x = pd.read_csv('./Stability/D_xtrain_non_working_day_stability.csv')
+    # df_y = pd.read_csv('./Stability/D_ytrain_non_working_day_stability.csv')
+    # df = pd.concat([df_x, df_y], axis=0)
+
+    # # 找出 raw_df 比 df 多的 uid
+    # raw_df = pd.read_csv('./Data/city_D_challengedata.csv')
+    # raw_uids = set(raw_df['uid'].unique())
+    # df_uids = set(df['uid'].unique())
+    # extra_uids = raw_uids - df_uids
+    # print(raw_df['uid'].nunique(), "個uid")
+    # print(df['uid'].nunique(), "個uid")
+    # print("raw_df 比 df 多的 uid 數量:", len(extra_uids))
+    # # print("raw_df 比 df 多的 uid:", sorted(list(extra_uids)))
+
+    # std_interval = [5, 10, 20, 30]
+    # for std in std_interval:
+    #     count = df[(df['x_std_mean'] < std) & (df['y_std_mean'] < std)]['uid'].nunique()
+    #     print(f"標準差小於{std}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
+
+    # count = df[(df['x_std_mean'] >= std_interval[-1]) | (df['y_std_mean'] >= std_interval[-1])]['uid'].nunique()
+    # print(f"標準差大於等於{std_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
+
+    # 統計資料 dtw
+    df_x = pd.read_csv('./Stability/A_xtrain_working_day_dtw.csv')
+    df_y = pd.read_csv('./Stability/A_ytrain_working_day_dtw.csv')
+    df = pd.concat([df_x, df_y], axis=0)
+    print(f"有{df['uid'].nunique()}個uid\n")
+    dtw_interval = [50, 100, 150, 200]
+
+    for dtw in dtw_interval:
+        count = df[df['dtw_mean'] < dtw]['uid'].nunique()
+        print(f"DTW小於{dtw}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
+    
+    count = df[df['dtw_mean'] >= dtw_interval[-1]]['uid'].nunique()
+    print(f"DTW大於等於{dtw_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
