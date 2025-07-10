@@ -183,10 +183,9 @@ class DataVisualizer:
             ani_ax.tick_params(axis='x', labelsize=10)
             ani_ax.tick_params(axis='y', labelsize=10)
             ani_ax.set_title(f"uid={uid} 第{user_df.iloc[i]['d']}天 {user_df.iloc[i]['t']*0.5}點鐘 ", fontsize=18)
-            if output_each_frame:
+            if output_each_frame:  
                 ani_fig.savefig(f'./Animations/uid_{uid}_each_frame/uid_{uid}_day{user_df.iloc[i]["d"]}_time{user_df.iloc[i]["t"]*0.5}.png')
             print(f"單人分時軌跡動畫進度: {i+1}/{user_df.shape[0]}", end='\r')
-
 
         ani = anime.FuncAnimation(ani_fig, update, frames=user_df.shape[0], init_func=init, repeat=True)
         start_day = user_df['d'].min()
