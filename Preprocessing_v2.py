@@ -31,6 +31,7 @@ class DataPreprocessor:
         """
         將工作日標記為1，非工作日標記為0。
         1: Monday, 2: Tuesday, 3: Wednesday, 4: Thursday, 5: Friday, 6: Saturday, 0: Sunday
+        額外規則：第31天和第35天也是假日
         """
         # 城市A和B是1~75連續，已知第七天是禮拜五，則可推出每週的對應關係。
         if self.city_name == 'A' or self.city_name == 'B': 
@@ -49,6 +50,9 @@ class DataPreprocessor:
             df.loc[mask2, 'day_of_week'] = ((df.loc[mask2, 'd'] - 65) % 7 + 5) % 7
             df['working_day'] = 1
             df.loc[df['day_of_week'].isin([6, 0]), 'working_day'] = 0
+
+        # 額外規則：第31天和第35天也是假日
+        df.loc[df['d'].isin([31, 35]), 'working_day'] = 0
 
         return df
 
@@ -275,10 +279,10 @@ class DataPreprocessor:
 測試程式碼
 """
 if __name__ == "__main__":
-    test_city_name = 'A'
-    # DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
+    test_city_name = 'D'
+    DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
-    # x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
+    x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
     # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
     # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     
@@ -360,15 +364,15 @@ if __name__ == "__main__":
     # print(f"標準差大於等於{std_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
 
     # 統計資料 dtw
-    df_x = pd.read_csv('./Stability/A_xtrain_working_day_dtw.csv')
-    df_y = pd.read_csv('./Stability/A_ytrain_working_day_dtw.csv')
-    df = pd.concat([df_x, df_y], axis=0)
-    print(f"有{df['uid'].nunique()}個uid\n")
-    dtw_interval = [50, 100, 150, 200]
+    # df_x = pd.read_csv('./Stability/A_xtrain_working_day_dtw.csv')
+    # df_y = pd.read_csv('./Stability/A_ytrain_working_day_dtw.csv')
+    # df = pd.concat([df_x, df_y], axis=0)
+    # print(f"有{df['uid'].nunique()}個uid\n")
+    # dtw_interval = [50, 100, 150, 200]
 
-    for dtw in dtw_interval:
-        count = df[df['dtw_mean'] < dtw]['uid'].nunique()
-        print(f"DTW小於{dtw}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
+    # for dtw in dtw_interval:
+    #     count = df[df['dtw_mean'] < dtw]['uid'].nunique()
+    #     print(f"DTW小於{dtw}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
     
-    count = df[df['dtw_mean'] >= dtw_interval[-1]]['uid'].nunique()
-    print(f"DTW大於等於{dtw_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
+    # count = df[df['dtw_mean'] >= dtw_interval[-1]]['uid'].nunique()
+    # print(f"DTW大於等於{dtw_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
