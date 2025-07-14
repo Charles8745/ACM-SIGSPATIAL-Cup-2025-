@@ -380,61 +380,62 @@ if __name__ == "__main__":
     # print(f"DTW大於等於{dtw_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
 
     # 比較CityC CityD前後差異是否很大
-    city_name = 'D'
-    train_working_day_std = pd.read_csv(f'./Stability/{city_name}_xtrain_working_day_stability.csv')
-    test_working_day_std = pd.read_csv(f'./Stability/{city_name}_xtest_working_day_stability.csv')
+    # city_name = 'D'
+    # train_working_day_std = pd.read_csv(f'./Stability/{city_name}_xtrain_working_day_stability.csv')
+    # test_working_day_std = pd.read_csv(f'./Stability/{city_name}_xtest_working_day_stability.csv')
 
-    train_df = train_working_day_std.set_index(['uid', 't'])
-    test_df = test_working_day_std.set_index(['uid', 't'])
+    # train_df = train_working_day_std.set_index(['uid', 't'])
+    # test_df = test_working_day_std.set_index(['uid', 't'])
 
-    uids = test_working_day_std['uid'].unique()
-    hours = test_working_day_std['t'].unique()
+    # uids = test_working_day_std['uid'].unique()
+    # hours = test_working_day_std['t'].unique()
 
-    diff_list = []
-    for i, uid in enumerate(uids):
-        x_diff = []
-        y_diff = []
-        for hour in hours:
-            try:
-                train_x_mean = train_df.at[(uid, hour), 'x_mean']
-                test_x_mean = test_df.at[(uid, hour), 'x_mean']
-                train_y_mean = train_df.at[(uid, hour), 'y_mean']
-                test_y_mean = test_df.at[(uid, hour), 'y_mean']
-            except KeyError:
-                continue
+    # diff_list = []
+    # for i, uid in enumerate(uids):
+    #     x_diff = []
+    #     y_diff = []
+    #     for hour in hours:
+    #         try:
+    #             train_x_mean = train_df.at[(uid, hour), 'x_mean']
+    #             test_x_mean = test_df.at[(uid, hour), 'x_mean']
+    #             train_y_mean = train_df.at[(uid, hour), 'y_mean']
+    #             test_y_mean = test_df.at[(uid, hour), 'y_mean']
+    #         except KeyError:
+    #             continue
 
-            if train_x_mean != 0 and test_x_mean != 0:
-                x_diff.append(abs(test_x_mean - train_x_mean))
-            if train_y_mean != 0 and test_y_mean != 0:
-                y_diff.append(abs(test_y_mean - train_y_mean))
-        diff_list.append({
-            'uid': uid,
-            'x_diff': np.mean(x_diff) if x_diff else np.nan,
-            'y_diff': np.mean(y_diff) if y_diff else np.nan
-        })
-        print(f"處理進度: {i+1}/{len(uids)} (uid={uid})", end='\r')
+    #         if train_x_mean != 0 and test_x_mean != 0:
+    #             x_diff.append(abs(test_x_mean - train_x_mean))
+    #         if train_y_mean != 0 and test_y_mean != 0:
+    #             y_diff.append(abs(test_y_mean - train_y_mean))
+    #     diff_list.append({
+    #         'uid': uid,
+    #         'x_diff': np.mean(x_diff) if x_diff else np.nan,
+    #         'y_diff': np.mean(y_diff) if y_diff else np.nan
+    #     })
+    #     print(f"處理進度: {i+1}/{len(uids)} (uid={uid})", end='\r')
     
 
-    diff_df = pd.DataFrame(diff_list)
-    diff_df.to_csv(f'./Stability/{city_name}_working_day_diff.csv', index=False)
+    # diff_df = pd.DataFrame(diff_list)
+    # diff_df.to_csv(f'./Stability/{city_name}_working_day_diff.csv', index=False)
 
-    x_diff_mean = diff_df['x_diff'].mean()
-    y_diff_mean = diff_df['y_diff'].mean()
-    print(f"\n{city_name}x_diff平均: {x_diff_mean:.2f}, y_diff平均: {y_diff_mean:.2f}")
+    # x_diff_mean = diff_df['x_diff'].mean()
+    # y_diff_mean = diff_df['y_diff'].mean()
+    # print(f"\n{city_name}x_diff平均: {x_diff_mean:.2f}, y_diff平均: {y_diff_mean:.2f}")
 
-    # 用 seaborn 畫 boxplot
-    plt.figure(figsize=(4, 6))
-    sns.boxplot(data=diff_df[['x_diff', 'y_diff']])
-    sns.stripplot(data=diff_df[['x_diff', 'y_diff']], color='violet', jitter=0.2, size=1.2, alpha=0.3)
+    # # 用 seaborn 畫 boxplot
+    # plt.figure(figsize=(4, 6))
+    # sns.boxplot(data=diff_df[['x_diff', 'y_diff']])
+    # sns.stripplot(data=diff_df[['x_diff', 'y_diff']], color='violet', jitter=0.2, size=1.2, alpha=0.3)
     
 
-    # 取得中位數
-    medians = diff_df[['x_diff', 'y_diff']].median()
+    # # 取得中位數
+    # medians = diff_df[['x_diff', 'y_diff']].median()
 
-    # 在圖上標註中位數
-    for i, col in enumerate(['x_diff', 'y_diff']):
-        plt.text(i, medians[col], f'Median={medians[col]:.2f}', ha='center', va='bottom', color='red', fontsize=10, fontweight='bold')
+    # # 在圖上標註中位數
+    # for i, col in enumerate(['x_diff', 'y_diff']):
+    #     plt.text(i, medians[col], f'Median={medians[col]:.2f}', ha='center', va='bottom', color='red', fontsize=10, fontweight='bold')
 
-    plt.title(f'{city_name} 1~60天和61~75天工作日差異')
-    plt.show()
+    # plt.title(f'{city_name} 1~60天和61~75天工作日差異')
+    # plt.show()
 
+    pass
