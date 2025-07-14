@@ -124,7 +124,7 @@ class DataVisualizer:
         ani.save('./Animations/histogram2d_by_day_hour_animation.gif', fps=fps, writer='pillow')
         plt.title("2D histogram 每天每小時動畫")
 
-    def single_user_trajectory(self, uid):
+    def single_user_trajectory(self, uid,   output=False):
         user_df = self.raw_csv_df[self.raw_csv_df['uid'] == uid]
         if user_df.empty:
             print(f"UID {uid} 的資料不存在")
@@ -143,6 +143,10 @@ class DataVisualizer:
         ax.xaxis.set_major_locator(MultipleLocator(10))
         ax.yaxis.set_major_locator(MultipleLocator(10))
         print(f"UID:{uid} 的資料筆數: {user_df.shape[0]}")
+        if output:
+            os.makedirs('./Animations', exist_ok=True)
+            fig.savefig(f'./Animations/uid_{uid}_trajectory.png')
+            print(f"UID:{uid} 的軌跡圖已儲存到 ./Animations/uid_{uid}_trajectory.png")
     
     def single_user_trajectory_animation(self, uid, fps=2, output_each_frame=False):
         user_df = self.raw_csv_df[self.raw_csv_df['uid'] == uid]
