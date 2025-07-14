@@ -1,4 +1,5 @@
 import os
+import seaborn as sns
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -89,7 +90,7 @@ class DataPreprocessor:
         print("資料處理完成，已儲存在Training_Testing_Data資料夾中\n")
         return x_train_df, x_test_df, y_train_df, y_test_df
 
-    def stability_analysis_std(self, df, city_name, dataset_prefix):
+    def stability_analysis_std(self, df, output_name):
         """
         歐式距離std計算，並儲存工作日和非工作日的標準差資料。
         新增x_std_mean, y_std_mean欄位（每個uid的x_std/y_std平均值），計算時忽略值為0或count<2的情況。
@@ -135,8 +136,8 @@ class DataPreprocessor:
         working_day_std_df['x_std_mean'] = working_day_std_df['uid'].map(x_std_mean_map)
         working_day_std_df['y_std_mean'] = working_day_std_df['uid'].map(y_std_mean_map)
 
-        working_day_std_df.to_csv(f'./Stability/{city_name}_{dataset_prefix}train_working_day_stability.csv', index=False)
-        print(f"工作日標準差資料已儲存至 ./Stability/{city_name}_{dataset_prefix}train_working_day_stability.csv")
+        working_day_std_df.to_csv(f'./Stability/{output_name}_working_day_stability.csv', index=False)
+        print(f"工作日標準差資料已儲存至 ./Stability/{output_name}_working_day_stability.csv")
 
         # 非工作日的標準差
         non_working_day_df = df[df['working_day'] == 0]
@@ -172,8 +173,8 @@ class DataPreprocessor:
         non_working_day_std_df['x_std_mean'] = non_working_day_std_df['uid'].map(x_std_mean_map)
         non_working_day_std_df['y_std_mean'] = non_working_day_std_df['uid'].map(y_std_mean_map)
 
-        non_working_day_std_df.to_csv(f'./Stability/{city_name}_{dataset_prefix}train_non_working_day_stability.csv', index=False)
-        print(f"非工作日標準差資料已儲存至 ./Stability/{city_name}_{dataset_prefix}train_non_working_day_stability.csv")
+        non_working_day_std_df.to_csv(f'./Stability/{output_name}_non_working_day_stability.csv', index=False)
+        print(f"非工作日標準差資料已儲存至 ./Stability/{output_name}_non_working_day_stability.csv")
 
         return working_day_std_df, non_working_day_std_df
 
@@ -279,10 +280,10 @@ class DataPreprocessor:
 測試程式碼
 """
 if __name__ == "__main__":
-    test_city_name = 'D'
-    DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
+    # test_city_name = 'D'
+    # DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
-    x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
+    # x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
     # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
     # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
     
@@ -355,6 +356,7 @@ if __name__ == "__main__":
     # print("raw_df 比 df 多的 uid 數量:", len(extra_uids))
     # # print("raw_df 比 df 多的 uid:", sorted(list(extra_uids)))
 
+    # 統計資料 std
     # std_interval = [5, 10, 20, 30]
     # for std in std_interval:
     #     count = df[(df['x_std_mean'] < std) & (df['y_std_mean'] < std)]['uid'].nunique()
@@ -376,3 +378,63 @@ if __name__ == "__main__":
     
     # count = df[df['dtw_mean'] >= dtw_interval[-1]]['uid'].nunique()
     # print(f"DTW大於等於{dtw_interval[-1]}的uid數量: {count}, 佔比: {count/df['uid'].nunique():.2%}")
+
+    # 比較CityC CityD前後差異是否很大
+    city_name = 'D'
+    train_working_day_std = pd.read_csv(f'./Stability/{city_name}_xtrain_working_day_stability.csv')
+    test_working_day_std = pd.read_csv(f'./Stability/{city_name}_xtest_working_day_stability.csv')
+
+    train_df = train_working_day_std.set_index(['uid', 't'])
+    test_df = test_working_day_std.set_index(['uid', 't'])
+
+    uids = test_working_day_std['uid'].unique()
+    hours = test_working_day_std['t'].unique()
+
+    diff_list = []
+    for i, uid in enumerate(uids):
+        x_diff = []
+        y_diff = []
+        for hour in hours:
+            try:
+                train_x_mean = train_df.at[(uid, hour), 'x_mean']
+                test_x_mean = test_df.at[(uid, hour), 'x_mean']
+                train_y_mean = train_df.at[(uid, hour), 'y_mean']
+                test_y_mean = test_df.at[(uid, hour), 'y_mean']
+            except KeyError:
+                continue
+
+            if train_x_mean != 0 and test_x_mean != 0:
+                x_diff.append(abs(test_x_mean - train_x_mean))
+            if train_y_mean != 0 and test_y_mean != 0:
+                y_diff.append(abs(test_y_mean - train_y_mean))
+        diff_list.append({
+            'uid': uid,
+            'x_diff': np.mean(x_diff) if x_diff else np.nan,
+            'y_diff': np.mean(y_diff) if y_diff else np.nan
+        })
+        print(f"處理進度: {i+1}/{len(uids)} (uid={uid})", end='\r')
+    
+
+    diff_df = pd.DataFrame(diff_list)
+    diff_df.to_csv(f'./Stability/{city_name}_working_day_diff.csv', index=False)
+
+    x_diff_mean = diff_df['x_diff'].mean()
+    y_diff_mean = diff_df['y_diff'].mean()
+    print(f"\n{city_name}x_diff平均: {x_diff_mean:.2f}, y_diff平均: {y_diff_mean:.2f}")
+
+    # 用 seaborn 畫 boxplot
+    plt.figure(figsize=(4, 6))
+    sns.boxplot(data=diff_df[['x_diff', 'y_diff']])
+    sns.stripplot(data=diff_df[['x_diff', 'y_diff']], color='violet', jitter=0.2, size=1.2, alpha=0.3)
+    
+
+    # 取得中位數
+    medians = diff_df[['x_diff', 'y_diff']].median()
+
+    # 在圖上標註中位數
+    for i, col in enumerate(['x_diff', 'y_diff']):
+        plt.text(i, medians[col], f'Median={medians[col]:.2f}', ha='center', va='bottom', color='red', fontsize=10, fontweight='bold')
+
+    plt.title(f'{city_name} 1~60天和61~75天工作日差異')
+    plt.show()
+
