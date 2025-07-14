@@ -4,9 +4,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import fastdtw
+import time
+import matplotlib.animation as anime
+from matplotlib.ticker import MultipleLocator, AutoLocator
 from DataVisualize_v2 import DataVisualizer as dv
 from fastdtw import fastdtw
-import time
+from scipy import stats
+
 
 class DataPreprocessor:
     def __init__(self, city_name, data_input):
@@ -276,13 +280,113 @@ class DataPreprocessor:
         print(f"\nDTW分析結果已儲存至 ./Stability/{output_name}")
         return dtw_df
 
+    def stability_analysis_GDiagnostic(self, df_path, std_df_path, alpha, output_path, IsWorkingDay=True):
+        os.makedirs('./Stability', exist_ok=True)
+        df = pd.read_csv(df_path)
+        std_df = pd.read_csv(std_df_path)
+
+        # 計算t_threshold
+        t_threshold = stats.norm.ppf(1 - alpha/2)
+
+        # 確保working_day為int型態
+        if df['working_day'].dtype != int:
+            df['working_day'] = df['working_day'].astype(int)
+
+        # 選取x_std_mean和y_std_mean為>5 (5以下穩定)
+        valid_uids = std_df[(std_df['x_std_mean'] > 5) & (std_df['y_std_mean'] > 5)]['uid'].unique()
+
+        # 只要8點到18點的資料
+        t_range = np.arange(16, 37)
+
+        # 判斷是否為工作日且uid在valid_uids的資料
+        if IsWorkingDay:
+            df = df[(df['working_day'] == 1) & (df['uid'].isin(valid_uids))]
+        else:
+            df = df[(df['working_day'] == 0) & (df['uid'].isin(valid_uids))]
+
+        # 計算每個時間點的Geweke diagnostic 
+        results = []
+        for idx, uid in enumerate(valid_uids):
+            start_time = time.time()
+            frac_results = {}
+            user_df = df[df['uid'] == uid]
+            for t in t_range:
+                sub = user_df[user_df['t'] == t]
+                last_50 = sub[sub['d'] > 30]
+                last_50_x_mean = last_50['x'].mean()
+                last_50_x_var = last_50['x'].var()
+                last_50_y_mean = last_50['y'].mean()
+                last_50_y_var = last_50['y'].var()
+                for n1_frac in [0.2, 0.3, 0.4, 0.5]:
+                    n1 = 60 * n1_frac
+                    first_n = sub[sub['d'] <= n1]
+                    if len(first_n) < 1 or len(last_50) < 1:
+                        frac_results[f"{int(n1_frac*100)}%"] = np.nan  # 無法計算則設為NaN
+                        continue
+                    first_n_x_mean = first_n['x'].mean()
+                    first_n_y_mean = first_n['y'].mean()
+                    first_n_x_var = first_n['x'].var()
+                    first_n_y_var = first_n['y'].var()
+                    z_x = (first_n_x_mean - last_50_x_mean) / np.sqrt(first_n_x_var/len(first_n) + last_50_x_var/len(last_50))
+                    z_y = (first_n_y_mean - last_50_y_mean) / np.sqrt(first_n_y_var/len(first_n) + last_50_y_var/len(last_50))
+                    # 只要有一個超過閾值就算fail
+                    if abs(z_x) > t_threshold or abs(z_y) > t_threshold:
+                        frac_results[f"{int(n1_frac*100)}%"] = 0  # fail
+                    else:
+                        frac_results[f"{int(n1_frac*100)}%"] = 1  # pass
+
+                row = {'uid': uid, 't': t}
+                row.update(frac_results)
+                results.append(row)
+
+            elapsed = time.time() - start_time
+            remaining_time = elapsed*(len(valid_uids) - (idx+1))
+            print(f"處理進度: {idx+1}/{len(valid_uids)} (uid={uid})，預估剩餘時間: {remaining_time//60}分, {output_path}", end='\r')
+
+            # if idx == 1000:  # 測試用，處理前1000個uid
+            #     break
+
+        geweke_df = pd.DataFrame(results, columns=['uid', 't', '20%', '30%', '40%', '50%'])
+        geweke_df.to_csv(f'./Stability/{output_path}', index=False, na_rep='null')
+        print(f"Geweke diagnostic 結果已儲存至 ./Stability/{output_path}")
+        return geweke_df
+
+
 """
 測試程式碼
 """
 if __name__ == "__main__":
-    # test_city_name = 'D'
+    # test_city_name = 'A'
     # DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
+    # Geweke diagnostic 
+    # lis =['A', 'B', 'C', 'D']
+    # for city in lis:
+    #     _ = DataLoader.stability_analysis_GDiagnostic(df_path = f"./Training_Testing_Data/{city}_x_train.csv", 
+    #                                                     std_df_path = f"./Stability/{city}_xtrain_working_day_stability.csv", 
+    #                                                     alpha = 0.05, 
+    #                                                     output_path = f"{city}_xtrain_working_day_geweke.csv", 
+    #                                                     IsWorkingDay=True)
+
+    #     _ = DataLoader.stability_analysis_GDiagnostic(df_path = f"./Training_Testing_Data/{city}_x_train.csv", 
+    #                                                     std_df_path = f"./Stability/{city}_xtrain_non_working_day_stability.csv", 
+    #                                                     alpha = 0.05, 
+    #                                                     output_path = f"{city}_xtrain_non_working_day_geweke.csv", 
+    #                                                     IsWorkingDay=False)
+
+    #     _ = DataLoader.stability_analysis_GDiagnostic(df_path = f"./Training_Testing_Data/{city}_y_train.csv", 
+    #                                                     std_df_path = f"./Stability/{city}_ytrain_working_day_stability.csv", 
+    #                                                     alpha = 0.05, 
+    #                                                     output_path = f"{city}_ytrain_working_day_geweke.csv", 
+    #                                                     IsWorkingDay=True)
+
+    #     _ = DataLoader.stability_analysis_GDiagnostic(df_path = f"./Training_Testing_Data/{city}_y_train.csv", 
+    #                                                     std_df_path = f"./Stability/{city}_ytrain_non_working_day_stability.csv", 
+    #                                                     alpha = 0.05, 
+    #                                                     output_path = f"{city}_ytrain_non_working_day_geweke.csv", 
+    #                                                     IsWorkingDay=False)
+
+    # 計算dtw距離
     # x_train_df,_,y_train_df,_ = DataLoader.get_training_testing_data()
     # _, _=DataLoader.stability_analysis_std(x_train_df, city_name=test_city_name,dataset_prefix='x')
     # _, _=DataLoader.stability_analysis_std(y_train_df, city_name=test_city_name,dataset_prefix='y')
@@ -438,4 +542,41 @@ if __name__ == "__main__":
     # plt.title(f'{city_name} 1~60天和61~75天工作日差異')
     # plt.show()
 
-    pass
+    # Geweke diagnostic統計資料
+    city = 'A'
+    df = pd.read_csv(f'./Stability/{city}_xtrain_working_day_geweke.csv')
+    cols = ['20%', '30%', '40%', '50%']
+    df[cols] = df[cols].fillna(999)
+    valid_uid = df['uid'].nunique()
+    print(df.head(30))
+
+    # 找出每個 uid 是否所有 t 都是 1
+    all_ones_uid = (df.groupby('uid')[cols].apply(lambda g: (g == 1).all().all()))
+
+    # 只取全為 True 的 uid
+    result_uids = all_ones_uid[all_ones_uid].index.tolist()
+    print(result_uids[:5], len(result_uids))
+
+    # 輸出點線圖來檢查
+    plot_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
+    plot_df = plot_df[plot_df['uid'].isin(result_uids)]
+    plot_df_before = plot_df[plot_df['d'] <= 30]
+    plot_df_after = plot_df[plot_df['d'] > 30]
+    fig = plt.figure(figsize=(30, 12))
+    for i, uid in enumerate(result_uids[:10]):
+        uid_df_before = plot_df_before[plot_df_before['uid'] == uid]
+        uid_df_after = plot_df_after[plot_df_after['uid'] == uid]
+        ax = fig.add_subplot(2,5,i+1)
+        ax.plot(uid_df_before['x'], uid_df_before['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.2, label=f'uid={uid} (before)')
+        ax.plot(uid_df_after['x'], uid_df_after['y'], marker='o', markersize=2, linestyle='-', color='red', alpha=0.2, label=f'uid={uid} (after)')
+        ax.set_title(f'City:{city} uid:{uid} 點數: bef.={uid_df_before["x"].count()} aft.={uid_df_after["x"].count()}', fontsize=10)
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', labelsize=10)
+        ax.set_xlim(1, 200)
+        ax.set_ylim(1, 200)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3)
+        ax.xaxis.set_major_locator(MultipleLocator(20))
+        ax.yaxis.set_major_locator(MultipleLocator(20))
+    plt.show()
+
