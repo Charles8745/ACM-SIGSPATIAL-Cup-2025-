@@ -293,7 +293,7 @@ class DataPreprocessor:
             df['working_day'] = df['working_day'].astype(int)
 
         # 選取x_std_mean和y_std_mean為>5 (5以下穩定)
-        valid_uids = std_df[(std_df['x_std_mean'] > 5) & (std_df['y_std_mean'] > 5)]['uid'].unique()
+        valid_uids = std_df[(std_df['x_std_mean'] >= 5) | (std_df['y_std_mean'] >= 5)]['uid'].unique()
 
         # 只要8點到18點的資料
         t_range = np.arange(16, 37)
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     # test_city_name = 'A'
     # DataLoader = DataPreprocessor(city_name=test_city_name, data_input=f'./Data./city_{test_city_name}_challengedata.csv')
 
-    # Geweke diagnostic 
+    # # Geweke diagnostic 
     # lis =['A', 'B', 'C', 'D']
     # for city in lis:
     #     _ = DataLoader.stability_analysis_GDiagnostic(df_path = f"./Training_Testing_Data/{city}_x_train.csv", 
@@ -543,40 +543,56 @@ if __name__ == "__main__":
     # plt.show()
 
     # Geweke diagnostic統計資料
-    city = 'A'
-    df = pd.read_csv(f'./Stability/{city}_xtrain_working_day_geweke.csv')
+    city = 'D'
+    df_1 = pd.read_csv(f'./Stability/{city}_xtrain_non_working_day_geweke.csv')
+    df_2 = pd.read_csv(f'./Stability/{city}_ytrain_non_working_day_geweke.csv')
+    df = pd.concat([df_1, df_2], axis=0)
+    print(f'共有{df["uid"].nunique()}個uid')
     cols = ['20%', '30%', '40%', '50%']
-    df[cols] = df[cols].fillna(999)
-    valid_uid = df['uid'].nunique()
-    print(df.head(30))
+ 
+    def count_non_null_and_ones(g):
+        # 計算所有 t 下四欄非 null 的總數
+        non_null_count = g[cols].count().sum()
+        # 計算所有 t 下四欄等於 1 的總數（只算非 null）
+        ones_count = (g[cols] == 1).sum().sum()
+        return pd.Series({'non_null_count': non_null_count, 'ones_count': ones_count})
 
-    # 找出每個 uid 是否所有 t 都是 1
-    all_ones_uid = (df.groupby('uid')[cols].apply(lambda g: (g == 1).all().all()))
+    uid_stats = df.groupby('uid').apply(count_non_null_and_ones).reset_index()
+    print(f"共有 {uid_stats['uid'].nunique()} 個 uid 的統計資料")
+    uid_stats['ones_ratio'] = uid_stats['ones_count'] / uid_stats['non_null_count']
+    uid_stats.to_csv(f'./Stability/{city}_uid_geweke_ones_ratio.csv', index=False)
+    print(uid_stats[uid_stats['ones_ratio'].isna()].head(), "個uid的ones_ratio為NaN")
 
-    # 只取全為 True 的 uid
-    result_uids = all_ones_uid[all_ones_uid].index.tolist()
-    print(result_uids[:5], len(result_uids))
+    thresholds = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]  # 從1.0到0.5
+    for threshold in thresholds:  # 從1.0到0.5
+        count = uid_stats[uid_stats['ones_ratio'] >= threshold]['uid'].nunique()
+        print(f"ones_ratio >= {threshold} 的 uid 數量: {count}, 佔比: {count/uid_stats['uid'].nunique():.2%}")
+    count = uid_stats[uid_stats['ones_ratio'] < 0.5]['uid'].nunique()
+    print(f"ones_ratio < 0.5 的 uid 數量: {count}, 佔比: {count/uid_stats['uid'].nunique():.2%}")
 
-    # 輸出點線圖來檢查
-    plot_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
-    plot_df = plot_df[plot_df['uid'].isin(result_uids)]
-    plot_df_before = plot_df[plot_df['d'] <= 30]
-    plot_df_after = plot_df[plot_df['d'] > 30]
-    fig = plt.figure(figsize=(30, 12))
-    for i, uid in enumerate(result_uids[:10]):
-        uid_df_before = plot_df_before[plot_df_before['uid'] == uid]
-        uid_df_after = plot_df_after[plot_df_after['uid'] == uid]
-        ax = fig.add_subplot(2,5,i+1)
-        ax.plot(uid_df_before['x'], uid_df_before['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.2, label=f'uid={uid} (before)')
-        ax.plot(uid_df_after['x'], uid_df_after['y'], marker='o', markersize=2, linestyle='-', color='red', alpha=0.2, label=f'uid={uid} (after)')
-        ax.set_title(f'City:{city} uid:{uid} 點數: bef.={uid_df_before["x"].count()} aft.={uid_df_after["x"].count()}', fontsize=10)
-        ax.tick_params(axis='x', labelsize=10)
-        ax.tick_params(axis='y', labelsize=10)
-        ax.set_xlim(1, 200)
-        ax.set_ylim(1, 200)
-        ax.invert_yaxis()
-        ax.grid(True, alpha=0.3)
-        ax.xaxis.set_major_locator(MultipleLocator(20))
-        ax.yaxis.set_major_locator(MultipleLocator(20))
-    plt.show()
+    # result_uids = uid_stats[(uid_stats['ones_ratio'] < 0.5)]['uid'].tolist()
+    # print(result_uids[:5], result_uids[-5:],len(result_uids))
+
+    # # 輸出點線圖來檢查
+    # plot_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
+    # plot_df = plot_df[plot_df['uid'].isin(result_uids)]
+    # plot_df_before = plot_df[plot_df['d'] <= 30]
+    # plot_df_after = plot_df[plot_df['d'] > 30]
+    # fig = plt.figure(figsize=(30, 12))
+    # for i, uid in enumerate(result_uids[:10]):
+    #     uid_df_before = plot_df_before[plot_df_before['uid'] == uid]
+    #     uid_df_after = plot_df_after[plot_df_after['uid'] == uid]
+    #     ax = fig.add_subplot(2,5,i+1)
+    #     ax.plot(uid_df_before['x'], uid_df_before['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.2, label=f'uid={uid} (before)')
+    #     ax.plot(uid_df_after['x'], uid_df_after['y'], marker='o', markersize=2, linestyle='-', color='red', alpha=0.2, label=f'uid={uid} (after)')
+    #     ax.set_title(f'City:{city} uid:{uid} 點數: bef.={uid_df_before["x"].count()} aft.={uid_df_after["x"].count()}', fontsize=10)
+    #     ax.tick_params(axis='x', labelsize=10)
+    #     ax.tick_params(axis='y', labelsize=10)
+    #     ax.set_xlim(1, 200)
+    #     ax.set_ylim(1, 200)
+    #     ax.invert_yaxis()
+    #     ax.grid(True, alpha=0.3)
+    #     ax.xaxis.set_major_locator(MultipleLocator(20))
+    #     ax.yaxis.set_major_locator(MultipleLocator(20))
+    # plt.show()
 
