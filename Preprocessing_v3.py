@@ -544,8 +544,8 @@ if __name__ == "__main__":
 
     # Geweke diagnostic統計資料
     city = 'D'
-    df_1 = pd.read_csv(f'./Stability/{city}_xtrain_non_working_day_geweke.csv')
-    df_2 = pd.read_csv(f'./Stability/{city}_ytrain_non_working_day_geweke.csv')
+    df_1 = pd.read_csv(f'./Stability/{city}_xtrain_working_day_geweke.csv')
+    df_2 = pd.read_csv(f'./Stability/{city}_ytrain_working_day_geweke.csv')
     df = pd.concat([df_1, df_2], axis=0)
     print(f'共有{df["uid"].nunique()}個uid')
     cols = ['20%', '30%', '40%', '50%']
@@ -561,7 +561,7 @@ if __name__ == "__main__":
     print(f"共有 {uid_stats['uid'].nunique()} 個 uid 的統計資料")
     uid_stats['ones_ratio'] = uid_stats['ones_count'] / uid_stats['non_null_count']
     uid_stats.to_csv(f'./Stability/{city}_uid_geweke_ones_ratio.csv', index=False)
-    print(uid_stats[uid_stats['ones_ratio'].isna()].head(), "個uid的ones_ratio為NaN")
+    print(uid_stats[uid_stats['ones_ratio'].isna()].head(), '\n', f"{len(uid_stats[uid_stats['ones_ratio'].isna()])}個uid的ones_ratio為NaN")
 
     thresholds = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]  # 從1.0到0.5
     for threshold in thresholds:  # 從1.0到0.5
