@@ -374,7 +374,7 @@ if __name__ == "__main__":
 
     std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
 
-    thresholds = [0, 9999]
+    thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
     for i in range(len(thresholds) - 1):
         lower = thresholds[i]
         upper = thresholds[i + 1]
@@ -383,7 +383,7 @@ if __name__ == "__main__":
         valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
         print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
 
-        std_model_zoo.Per_User_Per_t_Mode_day_of_week(valid_uid_list=valid_uid_list, output_name=f'A_std{upper}', early_stop=10000)
+        std_model_zoo.Per_User_Per_t_Mode_day_of_week(valid_uid_list=valid_uid_list, output_name=f'A_std{upper}', early_stop=3000)
 
         final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
             generated_data_input=f'./Predictions/A_std{upper}_Per_User_Per_t_Mode_day_of_week.csv',
