@@ -1,4 +1,5 @@
 import os
+import osmnx as ox
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -7,6 +8,9 @@ import time
 import fastdtw
 import matplotlib.pyplot as plt
 import matplotlib.animation as anime
+import requests
+import geopandas as gpd
+import contextily as ctx
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import pairwise_distances
 from matplotlib.ticker import MultipleLocator, AutoLocator
@@ -16,9 +20,16 @@ from scipy.stats import entropy
 from fastdtw import fastdtw
 from scipy import stats
 from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
 from mpl_toolkits.mplot3d import Axes3D
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
+from geopy.extra.rate_limiter import RateLimiter
+from shapely.geometry import Point, LineString
+import folium
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
+import ast
 
 
 class DataPreprocessor:
@@ -428,150 +439,540 @@ class DataPreprocessor:
 """
 if __name__ == "__main__":
 
-    ## 資料特徵工程
-    output_name = 'D'
-    dp = DataPreprocessor(f'{output_name}', f'./Data/city_{output_name}_challengedata.csv')
-    std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv')
-    input_df_1 = pd.read_csv(f'./Training_Testing_Data/{output_name}_x_train.csv')
-    input_df_2 = pd.read_csv(f'./Training_Testing_Data/{output_name}_y_train.csv')
-    input_df = pd.concat([input_df_1, input_df_2], ignore_index=True)
-    # valid_uid_list = np.sort(np.random.choice(input_df['uid'].unique(), size=10000, replace=False))
-    dp.extract_features(input_df, output_name= output_name)
+    # ## 資料特徵工程
+    # output_name = 'D'
+    # dp = DataPreprocessor(f'{output_name}', f'./Data/city_{output_name}_challengedata.csv')
+    # std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv')
+    # input_df_1 = pd.read_csv(f'./Training_Testing_Data/{output_name}_x_train.csv')
+    # input_df_2 = pd.read_csv(f'./Training_Testing_Data/{output_name}_y_train.csv')
+    # input_df = pd.concat([input_df_1, input_df_2], ignore_index=True)
+    # # valid_uid_list = np.sort(np.random.choice(input_df['uid'].unique(), size=10000, replace=False))
+    # dp.extract_features(input_df, output_name= output_name)
 
-    ## 分群: 生活圈重疊
-    activity_space_df = pd.read_csv(f'./Stability/{output_name}_features.csv')
-    print(f"包含{activity_space_df['uid'].nunique()}個uid")
-    features = ['bbox_xmin','bbox_ymin','bbox_xmax','bbox_ymax']
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=300, min_samples=350)
-    cluster_data = activity_space_df[features].fillna(0)
-    cluster_labels = clusterer.fit_predict(cluster_data)
-    activity_space_df['cluster'] = cluster_labels
-    activity_space_df.to_csv(f'./Stability/{output_name}_activity_space.csv', index=False)
-    print('分群結果已儲存:', f'./Stability/{output_name}_activity_space.csv')
+    # ## 分群: 生活圈重疊
+    # activity_space_df = pd.read_csv(f'./Stability/{output_name}_features.csv')
+    # print(f"包含{activity_space_df['uid'].nunique()}個uid")
+    # features = ['bbox_xmin','bbox_ymin','bbox_xmax','bbox_ymax']
+    # clusterer = hdbscan.HDBSCAN(min_cluster_size=300, min_samples=350)
+    # cluster_data = activity_space_df[features].fillna(0)
+    # cluster_labels = clusterer.fit_predict(cluster_data)
+    # activity_space_df['cluster'] = cluster_labels
+    # activity_space_df.to_csv(f'./Stability/{output_name}_activity_space.csv', index=False)
+    # print('分群結果已儲存:', f'./Stability/{output_name}_activity_space.csv')
 
-    # 統一顏色映射: 只對有效cluster分配顏色
-    cluster_ids = sorted([cid for cid in activity_space_df['cluster'].dropna().unique() if cid != -1])
-    color_map = plt.get_cmap('tab10')
-    cluster_color_dict = {cid: color_map(i % 10) for i, cid in enumerate(cluster_ids)}
+    # # 統一顏色映射: 只對有效cluster分配顏色
+    # cluster_ids = sorted([cid for cid in activity_space_df['cluster'].dropna().unique() if cid != -1])
+    # color_map = plt.get_cmap('tab10')
+    # cluster_color_dict = {cid: color_map(i % 10) for i, cid in enumerate(cluster_ids)}
 
-    # 繪製分群結果 (2維度)
-    X = activity_space_df[features].fillna(0).values
-    pca = PCA(n_components=2)
-    X_pca = pca.fit_transform(X)
-    fig, ax = plt.subplots(figsize=(10, 8))
-    # 依據cluster id分配顏色
-    colors = activity_space_df['cluster'].apply(lambda x: cluster_color_dict.get(x, '#cccccc'))
-    scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=colors, s=20, alpha=0.5)
-    ax.set_xlabel('PC1')
-    ax.set_ylabel('PC2')
-    plt.title('Cluster Visualization (PCA 2D)')
+    # # 繪製分群結果 (2維度)
+    # X = activity_space_df[features].fillna(0).values
+    # pca = PCA(n_components=2)
+    # X_pca = pca.fit_transform(X)
+    # fig, ax = plt.subplots(figsize=(10, 8))
+    # # 依據cluster id分配顏色
+    # colors = activity_space_df['cluster'].apply(lambda x: cluster_color_dict.get(x, '#cccccc'))
+    # scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=colors, s=20, alpha=0.5)
+    # ax.set_xlabel('PC1')
+    # ax.set_ylabel('PC2')
+    # plt.title('Cluster Visualization (PCA 2D)')
 
-    # 計算雜訊數量
-    n_noise = (activity_space_df['cluster'] == -1).sum()
-    print(f"雜訊數量 (cluster=-1): {n_noise}")
+    # # 計算雜訊數量
+    # n_noise = (activity_space_df['cluster'] == -1).sum()
+    # print(f"雜訊數量 (cluster=-1): {n_noise}")
 
-    # 自訂圖例
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor=cluster_color_dict[cid], edgecolor='k', label=f'Cluster {cid}') for cid in cluster_ids]
-    ax.legend(handles=legend_elements, title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
+    # # 自訂圖例
+    # from matplotlib.patches import Patch
+    # legend_elements = [Patch(facecolor=cluster_color_dict[cid], edgecolor='k', label=f'Cluster {cid}') for cid in cluster_ids]
+    # ax.legend(handles=legend_elements, title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
+    # plt.tight_layout()
 
-    # 畫出多個人的生活範圍(bbox)與home、work點（每群依群內人數動態SAMPLE，最多300人，同群同色）
-    fig2, ax2 = plt.subplots(figsize=(10,10))
-    for cid in cluster_ids:
-        group = activity_space_df[activity_space_df['cluster'] == cid]
-        n = len(group)
-        # 動態決定sample數量: min(300, max(10, int(n * 0.1)))
-        sample_n = min(300, max(10, int(n * 0.1))) if n > 10 else n
-        if n > sample_n:
-            group = group.sample(sample_n, random_state=42)
-            print(f"Cluster {cid} sample size: {sample_n} (original size: {n})")
-        color = cluster_color_dict[cid]
-        for idx, row in group.iterrows():
-            xmin, ymin, xmax, ymax = row['bbox_xmin'], row['bbox_ymin'], row['bbox_xmax'], row['bbox_ymax']
-            if not np.isnan(xmin) and not np.isnan(ymin) and not np.isnan(xmax) and not np.isnan(ymax):
-                rect = plt.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, fill=False, edgecolor=color, alpha=0.3, linewidth=1.5)
-                ax2.add_patch(rect)
-            # home點
-            if not np.isnan(row['home_x']) and not np.isnan(row['home_y']):
-                ax2.scatter(row['home_x'], row['home_y'], c=[color], s=30, marker='o', alpha=0.5, edgecolors='k', linewidths=0.2)
-            # work點
-            if not np.isnan(row['work_x']) and not np.isnan(row['work_y']):
-                ax2.scatter(row['work_x'], row['work_y'], c=[color], s=30, marker='^', alpha=0.5, edgecolors='k', linewidths=0.2)
-        # 只加一次圖例
-        ax2.plot([], [], color=color, lw=4, label=f'Cluster {cid}--{n} users')
-    ax2.set_xlim(1, 200)
-    ax2.set_ylim(1, 200)  # y軸反轉
-    ax2.set_xlabel('x')
-    ax2.set_ylabel('y')
-    ax2.invert_yaxis()
-    ax2.grid(True, alpha=0.3)
-    ax2.xaxis.set_major_locator(MultipleLocator(10))
-    ax2.yaxis.set_major_locator(MultipleLocator(10))
-    ax2.set_title('User Living Ranges by Cluster (dynamic sample per cluster, max 300 users per cluster)')
-    ax2.legend(title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
-    plt.show()
+    # # 畫出多個人的生活範圍(bbox)與home、work點（每群依群內人數動態SAMPLE，最多300人，同群同色）
+    # fig2, ax2 = plt.subplots(figsize=(10,10))
+    # for cid in cluster_ids:
+    #     group = activity_space_df[activity_space_df['cluster'] == cid]
+    #     n = len(group)
+    #     # 動態決定sample數量: min(300, max(10, int(n * 0.1)))
+    #     sample_n = min(300, max(10, int(n * 0.1))) if n > 10 else n
+    #     if n > sample_n:
+    #         group = group.sample(sample_n, random_state=42)
+    #         print(f"Cluster {cid} sample size: {sample_n} (original size: {n})")
+    #     color = cluster_color_dict[cid]
+    #     for idx, row in group.iterrows():
+    #         xmin, ymin, xmax, ymax = row['bbox_xmin'], row['bbox_ymin'], row['bbox_xmax'], row['bbox_ymax']
+    #         if not np.isnan(xmin) and not np.isnan(ymin) and not np.isnan(xmax) and not np.isnan(ymax):
+    #             rect = plt.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, fill=False, edgecolor=color, alpha=0.3, linewidth=1.5)
+    #             ax2.add_patch(rect)
+    #         # home點
+    #         if not np.isnan(row['home_x']) and not np.isnan(row['home_y']):
+    #             ax2.scatter(row['home_x'], row['home_y'], c=[color], s=30, marker='o', alpha=0.5, edgecolors='k', linewidths=0.2)
+    #         # work點
+    #         if not np.isnan(row['work_x']) and not np.isnan(row['work_y']):
+    #             ax2.scatter(row['work_x'], row['work_y'], c=[color], s=30, marker='^', alpha=0.5, edgecolors='k', linewidths=0.2)
+    #     # 只加一次圖例
+    #     ax2.plot([], [], color=color, lw=4, label=f'Cluster {cid}--{n} users')
+    # ax2.set_xlim(1, 200)
+    # ax2.set_ylim(1, 200)  # y軸反轉
+    # ax2.set_xlabel('x')
+    # ax2.set_ylabel('y')
+    # ax2.invert_yaxis()
+    # ax2.grid(True, alpha=0.3)
+    # ax2.xaxis.set_major_locator(MultipleLocator(10))
+    # ax2.yaxis.set_major_locator(MultipleLocator(10))
+    # ax2.set_title('User Living Ranges by Cluster (dynamic sample per cluster, max 300 users per cluster)')
+    # ax2.legend(title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
+    # plt.tight_layout()
+    # plt.show()
 
-    ## 地圖上的POI
-    # 讀取 features 檔案
-    # output_name = 'B'
-    features_df = pd.read_csv(f'./Stability/{output_name}_features.csv')
+    # ## 地圖上的POI
+    # # 讀取 features 檔案
+    # # output_name = 'B'
+    # features_df = pd.read_csv(f'./Stability/{output_name}_features.csv')
 
-    # 1. 收集所有 home、work、hotspot_centers
-    points = []
-    for _, row in features_df.iterrows():
-        if not np.isnan(row['home_x']) and not np.isnan(row['home_y']):
-            points.append((row['home_x'], row['home_y']))
-        if not np.isnan(row['work_x']) and not np.isnan(row['work_y']):
-            points.append((row['work_x'], row['work_y']))
-        if isinstance(row['hotspot_centers'], str) and row['hotspot_centers']:
-            for center in row['hotspot_centers'].split(';'):
-                x, y = eval(center)
-                points.append((x, y))
+    # # 1. 收集所有 home、work、hotspot_centers
+    # points = []
+    # for _, row in features_df.iterrows():
+    #     if not np.isnan(row['home_x']) and not np.isnan(row['home_y']):
+    #         points.append((row['home_x'], row['home_y']))
+    #     if not np.isnan(row['work_x']) and not np.isnan(row['work_y']):
+    #         points.append((row['work_x'], row['work_y']))
+    #     if isinstance(row['hotspot_centers'], str) and row['hotspot_centers']:
+    #         for center in row['hotspot_centers'].split(';'):
+    #             x, y = eval(center)
+    #             points.append((x, y))
 
-    # 2. 統計出現次數
-    counter = Counter(points)
-    sorted_points = sorted(counter.items(), key=lambda x: x[1], reverse=True)
+    # # 2. 統計出現次數
+    # counter = Counter(points)
+    # sorted_points = sorted(counter.items(), key=lambda x: x[1], reverse=True)
 
-    # 3. 最小距離過濾
-    top_poi = 50
-    min_dist = 2  # 你可以調整這個距離
-    selected_poi = []
-    for (x, y), count in sorted_points:
-        if all(np.linalg.norm(np.array([x, y]) - np.array([px, py])) >= min_dist for px, py, _ in selected_poi):
-            selected_poi.append((x, y, count))
-        if len(selected_poi) >= top_poi:  # 你可以調整最多POI數量
-            break
+    # # 3. 最小距離過濾
+    # top_poi = 50
+    # min_dist = 2  # 你可以調整這個距離
+    # selected_poi = []
+    # for (x, y), count in sorted_points:
+    #     if all(np.linalg.norm(np.array([x, y]) - np.array([px, py])) >= min_dist for px, py, _ in selected_poi):
+    #         selected_poi.append((x, y, count))
+    #     if len(selected_poi) >= top_poi:  # 你可以調整最多POI數量
+    #         break
 
-    # 4. 儲存POI到CSV
-    poi_df = pd.DataFrame(selected_poi, columns=['poi_x', 'poi_y', 'count'])
-    poi_df.to_csv(f'./Stability/{output_name}_poi.csv', index=False)
-    print(f"POI已儲存至 ./Stability/{output_name}_poi.csv")
+    # # 4. 儲存POI到CSV
+    # poi_df = pd.DataFrame(selected_poi, columns=['poi_x', 'poi_y', 'count'])
+    # poi_df.to_csv(f'./Stability/{output_name}_poi.csv', index=False)
+    # print(f"POI已儲存至 ./Stability/{output_name}_poi.csv")
 
-    # 4. 可視化POI
-    plt.figure(figsize=(8, 8))
-    # 使用colormap分配顏色
-    cmap = plt.get_cmap('tab20')
-    colors = [cmap(i % 20) for i in range(len(poi_df))]
-    plt.scatter(poi_df['poi_x'], poi_df['poi_y'], s=20, c=colors, alpha=1, edgecolors='k', linewidths=0.8)
+    # # 4. 可視化POI
+    # plt.figure(figsize=(8, 8))
+    # # 使用colormap分配顏色
+    # cmap = plt.get_cmap('tab20')
+    # colors = [cmap(i % 20) for i in range(len(poi_df))]
+    # plt.scatter(poi_df['poi_x'], poi_df['poi_y'], s=20, c=colors, alpha=1, edgecolors='k', linewidths=0.8)
+    # plt.xlim(1, 200)
+    # plt.ylim(1, 200)
+    # plt.xlabel('x')
+    # plt.ylabel('y')
+    # plt.gca().invert_yaxis()  # y軸反轉
+    # plt.title('Top POI Distribution')
+    # plt.grid(True, alpha=0.3)
+    # plt.gca().xaxis.set_major_locator(MultipleLocator(10))
+    # plt.gca().yaxis.set_major_locator(MultipleLocator(10))
+    # plt.tight_layout()
+    # plt.show()
+
+    ## POI自動對齊
+    output_name = 'A'
+    # xy 與 latlon 對應點，分布在 200x200 範圍
+    xy = np.array([
+        [135,77], [129,81], [135,82], [139,88],[53,177],[94,24],[113,38],[168,124]
+    ])
+    # 對應的經緯度
+    latlon = np.array([
+        [35.171686742452046, 136.8819338645865],
+        [35.136656631816585, 136.9096687302056],
+        [35.17630485304206, 136.91512169532413],
+        [35.18615646726879, 136.9473140549638],
+        [34.758689289657525, 137.4246461958176],
+        [34.96953043074047, 136.61705699934433],
+        [35.05893050719316, 136.67898179306147],
+        [35.329354846749176, 137.13783025649616],
+    ])
+
+    # x 代表緯度, y 代表經度，分開建模
+    from sklearn.preprocessing import PolynomialFeatures
+    poly = PolynomialFeatures(degree=2)
+    x_arr = xy[:,0].reshape(-1,1)
+    y_arr = xy[:,1].reshape(-1,1)
+    lat_arr = latlon[:,0]
+    lon_arr = latlon[:,1]
+    x_poly = poly.fit_transform(x_arr)
+    y_poly = poly.fit_transform(y_arr)
+    reg_lat = LinearRegression().fit(x_poly, lat_arr)
+    reg_lon = LinearRegression().fit(y_poly, lon_arr)
+
+    def xy_to_latlon(x, y):
+        lat = reg_lat.predict(poly.transform(np.array([[x]])))[0]
+        lon = reg_lon.predict(poly.transform(np.array([[y]])))[0]
+        return lat, lon
+
+    # 以第一個點為中心
+    m = folium.Map(location=[latlon[0,0], latlon[0,1]], zoom_start=13)
+
+    # 假設 poi_df 是你的 xy 資料
+    poi_df = pd.read_csv(f'./Stability/{output_name}_poi.csv')
+    for idx, row in poi_df.iterrows():
+        lat, lon = xy_to_latlon(row['poi_x'], row['poi_y'])
+        folium.CircleMarker(location=[lat, lon], radius=5, color='blue').add_to(m)
+
+    m.save(f'./Stability/{output_name}_poi_map.html')
+
+    # 輸出200*200所有x,y對應的經緯度
+    grid = []
+    for x in range(1, 201):
+        for y in range(1, 201):
+            lat = reg_lat.predict(poly.transform(np.array([[x]])))[0]
+            lon = reg_lon.predict(poly.transform(np.array([[y]])))[0]
+            grid.append({'x': x, 'y': y, 'lat': lat, 'lon': lon})
+    grid_df = pd.DataFrame(grid)
+    grid_df.to_csv(f'./Stability/{output_name}_xy_grid_latlon.csv', index=False)
+    print(f"已輸出 ./Stability/{output_name}_xy_grid_latlon.csv (200*200全座標)")
+
+
+    ## 地圖上標示興趣點並儲存各興趣點對應的x,y點
+    # 1. 讀取 xy_grid_latlon.csv
+    grid_df = pd.read_csv(f'./Stability/{output_name}_xy_grid_latlon.csv')
+
+    # 2. 用bounding box定義地圖範圍
+    os.makedirs('./OSM', exist_ok=True)
+    min_lat = grid_df['lat'].min()
+    max_lat = grid_df['lat'].max()
+    min_lon = grid_df['lon'].min()
+    max_lon = grid_df['lon'].max()
+    bbox = [min_lon, min_lat, max_lon, max_lat] # bounding box: [min_lon, min_lat, max_lon, max_lat]
+    overpass_url = "http://overpass-api.de/api/interpreter"
+
+
+    # 3. 經緯度轉 x, y函式
+    def latlon_to_xy(lat, lon):
+        # 反向用已擬合回歸模型
+        # 由於是單變數回歸，這裡用最近格點法
+        # 直接用 x = argmin |lat_pred(x) - lat|, y = argmin |lon_pred(y) - lon|
+        x_grid = np.arange(1, 201)
+        y_grid = np.arange(1, 201)
+        lat_pred = reg_lat.predict(poly.transform(x_grid.reshape(-1,1)))
+        lon_pred = reg_lon.predict(poly.transform(y_grid.reshape(-1,1)))
+        x = x_grid[np.argmin(np.abs(lat_pred - lat))]
+        y = y_grid[np.argmin(np.abs(lon_pred - lon))]
+        return x, y
+
+    # 4. 查詢 OSM 資料，並轉換儲存
+    # 地鐵站
+    query_station = f"""
+    [out:json][timeout:60];
+    node[railway=station][station=subway]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    out body;
+    """
+    response = requests.post(overpass_url, data={'data': query_station})
+    data = response.json()
+    stations = []
+    for el in data['elements']:
+        name = el['tags'].get('name','')
+        lat = el['lat']
+        lon = el['lon']
+        x, y = latlon_to_xy(lat, lon)
+        stations.append({'name': name, 'x': x, 'y': y})
+    stations_df = pd.DataFrame(stations)
+    stations_df.to_csv(f'./OSM/{output_name}_subway_stations.csv', index=False)
+    print(f'已儲存地鐵站至 ./OSM/{output_name}_subway_stations.csv')
+
+    # 地鐵線
+    query_subway_lines = f"""
+    [out:json][timeout:60];
+    relation["route"="subway"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    out body;
+    >;
+    out skel qt;
+    """
+    response = requests.post(overpass_url, data={'data': query_subway_lines})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    subway_lines = []
+    for el in data['elements']:
+        if el['type'] == 'relation' and el['tags'].get('route') == 'subway':
+            line_name = el['tags'].get('name', '')
+            # 取得所有 member node id
+            node_ids = [m['ref'] for m in el['members'] if m['type'] == 'node']
+            # 轉成經緯度
+            coords = [nodes[nid] for nid in node_ids if nid in nodes]
+            # 轉成 x, y
+            xy_coords = [latlon_to_xy(lat, lon) for lat, lon in coords]
+            for idx, (x, y) in enumerate(xy_coords):
+                subway_lines.append({'line_name': line_name, 'order': idx, 'x': x, 'y': y})
+    subway_lines_df = pd.DataFrame(subway_lines)
+    subway_lines_df.to_csv(f'./OSM/{output_name}_subway_lines.csv', index=False)
+    print(f'已儲存地鐵線至 ./OSM/{output_name}_subway_lines.csv')
+
+    # 火車站
+    query_train_station = f"""
+    [out:json][timeout:60];
+    node["railway"="station"]["station"!="subway"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    out body;
+    """
+    response = requests.post(overpass_url, data={'data': query_train_station})
+    data = response.json()
+    train_stations = []
+    for el in data['elements']:
+        if el['type'] == 'node' and el['tags'].get('railway') == 'station' and el['tags'].get('station') != 'subway':
+            name = el['tags'].get('name','')
+            lat = el['lat']
+            lon = el['lon']
+            x, y = latlon_to_xy(lat, lon)
+            train_stations.append({'name': name, 'x': x, 'y': y})
+    train_stations_df = pd.DataFrame(train_stations)
+    train_stations_df.to_csv(f'./OSM/{output_name}_train_stations.csv', index=False)
+    print(f'已儲存火車站至 ./OSM/{output_name}_train_stations.csv')
+
+    # 大學
+    query_universities = f"""
+    [out:json][timeout:60];
+    (
+    node["amenity"="university"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    response = requests.post(overpass_url, data={'data': query_universities})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    universities = []
+    for el in data['elements']:
+        if el['type'] == 'node' and el['tags'].get('amenity') == 'university':
+            name = el['tags'].get('name','')
+            lat = el['lat']
+            lon = el['lon']
+            x, y = latlon_to_xy(lat, lon)
+            universities.append({'name': name, 'x': x, 'y': y})
+    universities_df = pd.DataFrame(universities)
+    universities_df.to_csv(f'./OSM/{output_name}_universities.csv', index=False)
+    print(f'已儲存大學至 ./OSM/{output_name}_universities.csv')
+
+    # 國高中
+    query_high_schools = f"""
+    [out:json][timeout:60];
+    (
+    node["amenity"="school"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    response = requests.post(overpass_url, data={'data': query_high_schools})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    high_schools = []
+    for el in data['elements']:
+        if el['type'] == 'node' and el['tags'].get('amenity') == 'school':
+            name = el['tags'].get('name','')
+            if ('高等学校' in name) or ('中学校' in name):
+                lat = el['lat']
+                lon = el['lon']
+                x, y = latlon_to_xy(lat, lon)
+                high_schools.append({'name': name, 'x': x, 'y': y})
+    high_schools_df = pd.DataFrame(high_schools)
+    high_schools_df.to_csv(f'./OSM/{output_name}_high_schools.csv', index=False)
+    print(f'已儲存國高中至 ./OSM/{output_name}_high_schools.csv')
+
+    # 大型購物中心或百貨公司
+    query_shopping_centers = f"""
+    [out:json][timeout:60];
+    (
+    node["shop"="mall"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    node["shop"="department_store"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    response = requests.post(overpass_url, data={'data': query_shopping_centers})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    shopping_centers = []
+    for el in data['elements']:
+        if el['type'] == 'node' and (el['tags'].get('shop') == 'mall' or el['tags'].get('shop') == 'department_store'):
+            name = el['tags'].get('name','')
+            lat = el['lat']
+            lon = el['lon']
+            x, y = latlon_to_xy(lat, lon)
+            shopping_centers.append({'name': name, 'x': x, 'y': y})
+    shopping_centers_df = pd.DataFrame(shopping_centers)
+    shopping_centers_df.to_csv(f'./OSM/{output_name}_shopping_centers.csv', index=False)
+    print(f'已儲存購物中心至 ./OSM/{output_name}_shopping_centers.csv')
+
+    # 辦公區
+    query_office_areas = f"""
+    [out:json][timeout:60];
+    (
+    node["office"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    response = requests.post(overpass_url, data={'data': query_office_areas})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    office_areas = []
+    for el in data['elements']:
+        if el['type'] == 'node' and el['tags'].get('office'):
+            name = el['tags'].get('name','')
+            lat = el['lat']
+            lon = el['lon']
+            x, y = latlon_to_xy(lat, lon)
+            office_areas.append({'name': name, 'x': x, 'y': y})
+    office_areas_df = pd.DataFrame(office_areas)
+    office_areas_df.to_csv(f'./OSM/{output_name}_office_areas.csv', index=False)
+
+    # 公園
+    query_parks = f"""
+    [out:json][timeout:60];
+    node["leisure"="park"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    out body;
+    """
+    response = requests.post(overpass_url, data={'data': query_parks})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    parks = []
+    for el in data['elements']:
+        if el['type'] == 'node' and el['tags'].get('leisure') == 'park':
+            name = el['tags'].get('name','')
+            lat = el['lat']
+            lon = el['lon']
+            x, y = latlon_to_xy(lat, lon)
+            parks.append({'name': name, 'x': x, 'y': y})
+    parks_df = pd.DataFrame(parks)
+    parks_df.to_csv(f'./OSM/{output_name}_parks.csv', index=False)
+    print(f'已儲存公園至 ./OSM/{output_name}_parks.csv')
+
+    # 酒吧或居酒屋
+    query_bars = f"""
+    [out:json][timeout:60];
+    (
+    node["amenity"="pub"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    node["amenity"="bar"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    node["leisure"="bar"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    );
+    out body;
+    """
+    response = requests.post(overpass_url, data={'data': query_bars})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    bars = []
+    for el in data['elements']:
+        if el['type'] == 'node' and el['tags'].get('amenity') in ['pub', 'bar']:
+            name = el['tags'].get('name','')
+            lat = el['lat']
+            lon = el['lon']
+            x, y = latlon_to_xy(lat, lon)
+            bars.append({'name': name, 'x': x, 'y': y})
+    bars_df = pd.DataFrame(bars)
+    bars_df.to_csv(f'./OSM/{output_name}_bars.csv', index=False)
+    print(f'已儲存酒吧至 ./OSM/{output_name}_bars.csv')
+
+    # 高速公路
+    query_freeways = f"""
+    [out:json][timeout:60];
+    way["highway"~"motorway"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    (._;>;);
+    out body;
+    """
+    response = requests.post(overpass_url, data={'data': query_freeways})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    freeways_roads = []
+    for el in data['elements']:
+        if el['type'] == 'way' and 'highway' in el['tags']:
+            road_name = el['tags'].get('name', '')
+            node_ids = el['nodes']
+            coords = [nodes[nid] for nid in node_ids if nid in nodes]
+            xy_coords = [latlon_to_xy(lat, lon) for lat, lon in coords]
+            freeways_roads.append({'road_name': road_name, 'xy_coords': xy_coords})
+    freeways_roads = pd.DataFrame(freeways_roads)
+    freeways_roads.to_csv(f'./OSM/{output_name}_motorways.csv', index=False)
+    print(f'已儲存高速公路至 ./OSM/{output_name}_motorways.csv')
+
+    # 主幹道
+    query_main_roads = f"""
+    [out:json][timeout:60];
+    way["highway"~"trunk|primary"]({bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]});
+    (._;>;);
+    out body;
+    """
+    response = requests.post(overpass_url, data={'data': query_main_roads})
+    data = response.json()
+    nodes = {el['id']: (el['lat'], el['lon']) for el in data['elements'] if el['type'] == 'node'}
+    main_roads = []
+    for el in data['elements']:
+        if el['type'] == 'way' and 'highway' in el['tags']:
+            road_name = el['tags'].get('name', '')
+            node_ids = el['nodes']
+            coords = [nodes[nid] for nid in node_ids if nid in nodes]
+            xy_coords = [latlon_to_xy(lat, lon) for lat, lon in coords]
+            main_roads.append({'road_name': road_name, 'xy_coords': xy_coords})
+    main_roads = pd.DataFrame(main_roads)
+    main_roads.to_csv(f'./OSM/{output_name}_main_roads.csv', index=False)
+    print(f'已儲存主幹道至 ./OSM/{output_name}_main_roads.csv')
+
+    # 5. 畫在 200x200 地圖上
+    plt.figure(figsize=(15,15))
+    # 畫地鐵站
+    plt.scatter(stations_df['x'], stations_df['y'], c='red', s=11, label='Subway Station', zorder=5, alpha=0.5, marker='^')
+    # 畫地鐵線
+    for line_name, group in subway_lines_df.groupby('line_name'):
+        if not group.empty:
+            x_coords = group['x'].tolist()
+            y_coords = group['y'].tolist()
+            plt.plot(x_coords, y_coords, linewidth=2, alpha=0.7, zorder=10)
+    # 畫火車站
+    plt.scatter(train_stations_df['x'], train_stations_df['y'], c='magenta', s=5, label='Train Station', zorder=5, alpha=0.5, marker='v')
+    # 畫大學
+    plt.scatter(universities_df['x'], universities_df['y'], c='blue', s=5, label='University', zorder=5, alpha=0.5, marker='s')
+    # 畫國高中
+    plt.scatter(high_schools_df['x'], high_schools_df['y'], c='aqua', s=2, label='High School', zorder=3, alpha=0.3, marker='o')
+    # 畫購物中心
+    plt.scatter(shopping_centers_df['x'], shopping_centers_df['y'], c='purple', s=5, label='Shopping Center', zorder=3, alpha=0.7, marker='*')
+    # 畫辦公區
+    plt.scatter(office_areas_df['x'], office_areas_df['y'], c='orange', s=3, label='Office Area', zorder=3, alpha=0.3, marker='D')
+    # 畫公園
+    plt.scatter(parks_df['x'], parks_df['y'], c='darkgreen', s=3, label='Park', zorder=2, alpha=0.2, marker='p')
+    # 畫酒吧
+    plt.scatter(bars_df['x'], bars_df['y'], c='brown', s=3, label='Bar', zorder=2, alpha=0.2, marker='4')
+    # 畫高速公路
+    for _, road in freeways_roads.iterrows():
+        xy_coords = ast.literal_eval(str(road['xy_coords'])) if isinstance(road['xy_coords'], str) else road['xy_coords']
+        x_coords = [x for x, y in xy_coords]
+        y_coords = [y for x, y in xy_coords]
+        plt.plot(x_coords, y_coords, color='turquoise', zorder=1, linewidth=1.5, alpha=0.5,label='Freeway' if 'Freeway' not in plt.gca().get_legend_handles_labels()[1] else "")
+    # 畫主幹道 trunk/primary
+    for _, road in main_roads.iterrows():
+        xy_coords = ast.literal_eval(str(road['xy_coords'])) if isinstance(road['xy_coords'], str) else road['xy_coords']
+        x_coords = [x for x, y in xy_coords]
+        y_coords = [y for x, y in xy_coords]
+        plt.plot(x_coords, y_coords, color='khaki', zorder=1, linewidth=1.5, alpha=0.5, linestyle='--', label='Trunk/Primary' if 'Trunk/Primary' not in plt.gca().get_legend_handles_labels()[1] else "")
+
+    # 6. 輸出圖
     plt.xlim(1, 200)
     plt.ylim(1, 200)
     plt.xlabel('x')
     plt.ylabel('y')
-    plt.gca().invert_yaxis()  # y軸反轉
-    plt.title('Top POI Distribution')
+    plt.title(f'{output_name} Subway Stations and Lines (xy grid)')
+    plt.gca().invert_yaxis()
+    plt.legend()
     plt.grid(True, alpha=0.3)
     plt.gca().xaxis.set_major_locator(MultipleLocator(10))
     plt.gca().yaxis.set_major_locator(MultipleLocator(10))
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f'./Animations/{output_name}_poi_map.png', dpi=200)
+    print(f'已輸出 ./Animations/{output_name}_poi_map.png')
 
-    ## POI自動對齊
-
-   
-
-    
 
 
   
