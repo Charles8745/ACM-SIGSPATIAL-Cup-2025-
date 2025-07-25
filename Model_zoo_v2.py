@@ -12,6 +12,9 @@ import joblib
 from collections import defaultdict, Counter
 from sklearn.ensemble import RandomForestRegressor
 from tqdm import tqdm
+import shap
+import xgboost as xgb
+import lightgbm as lgb
 matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
@@ -38,11 +41,11 @@ class ModelZoo:
         y = None
         if 'x' in feature_list and 'y' in feature_list:
             y = pd.DataFrame({
-                'uid': X['uid'],
-                'd': X['d'],
-                't': X['t'],
-                'x': X['x'],
-                'y': X['y']
+                'uid': df['uid'],
+                'd': df['d'],
+                't': df['t'],
+                'x': df['x'],
+                'y': df['y']
             })
             X = X.drop(columns=['x', 'y'])
         return X, y
@@ -67,7 +70,7 @@ class ModelZoo:
             print(f'訓練進度 {i + 1}/{total}: uid {uid}', end='\r')
         print(f'\n訓練完成，模型已儲存到 ./ckpt/RF/{output_name}/')
 
-    def predict_per_user_RF(self, test_df, feature_df, feature_list, valid_uid_list=None, output_name='A'):
+    def predict_per_user_RF(self, test_df, feature_df, feature_list, valid_uid_list=None, output_name='CityName'):
         if valid_uid_list is not None:
             test_df = test_df[test_df['uid'].isin(valid_uid_list)]
             feature_df = feature_df[feature_df['uid'].isin(valid_uid_list)]
@@ -84,11 +87,12 @@ class ModelZoo:
         uid_list = test_df['uid'].unique()
         total = len(uid_list)
         for idx, uid in enumerate(uid_list):
+            raw_uid = df[df['uid'] == uid].copy()
             X_uid = test_df[test_df['uid'] == uid].copy()
             reg = joblib.load(f'./ckpt/RF/{output_name}/rf_uid_{uid}.pkl')
             X_uid_input = X_uid.drop(columns=['uid'])
             y_pred = reg.predict(X_uid_input)
-            for i, row in X_uid.iterrows():
+            for i, row in raw_uid.iterrows():
                 results.append({
                     'uid': row['uid'],
                     'd': row['d'],
@@ -103,6 +107,130 @@ class ModelZoo:
         os.makedirs(f'./Predictions/RF', exist_ok=True)
         output_df.to_csv(f'./Predictions/RF/{output_name}_Per_user_RF.csv', index=False)
         print(f'\n預測完成，結果已儲存到 ./Predictions/RF/{output_name}_Per_user_RF.csv')
+        return output_df
+
+    def Per_user_XGB(self, X, y, n_estimators=100, random_state=42, output_name='CityName', use_gpu=False):
+        os.makedirs(f'./ckpt/XGB/{output_name}', exist_ok=True)
+        uid_list = X['uid'].unique()
+        total = len(uid_list)
+        for i, uid in enumerate(uid_list):
+            X_uid = X[X['uid'] == uid].copy()
+            y_uid = y[y['uid'] == uid][['x', 'y']]
+            if use_gpu:
+                reg_x = xgb.XGBRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1, tree_method='gpu_hist')
+                reg_y = xgb.XGBRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1, tree_method='gpu_hist')
+            else:   
+                reg_x = xgb.XGBRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1)
+                reg_y = xgb.XGBRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1)
+            reg_x.fit(X_uid.drop(columns=['uid']), y_uid['x'])
+            reg_y.fit(X_uid.drop(columns=['uid']), y_uid['y'])
+            joblib.dump((reg_x, reg_y), f'./ckpt/XGB/{output_name}/xgb_uid_{uid}.pkl')
+            print(f'訓練進度 {i + 1}/{total}: uid {uid}', end='\r')
+        print(f'\n訓練完成，模型已儲存到 ./ckpt/XGB/{output_name}/')
+
+    def plot_importance_per_user_XGB(self, uid, output_name='CityName', max_num_features=10):
+        """
+        視覺化指定 uid 的 XGBoost 模型特徵重要性
+        uid: 指定的使用者 ID
+        output_name: 模型存檔名稱
+        max_num_features: 顯示前幾個重要特徵
+        """
+        model_path = f'./ckpt/XGB/{output_name}/xgb_uid_{uid}.pkl'
+        if not os.path.exists(model_path):
+            print(f"模型檔案不存在: {model_path}")
+            return
+        reg_x, reg_y = joblib.load(model_path)
+        xgb.plot_importance(reg_x, max_num_features=max_num_features)
+        plt.title(f"XGB Feature Importance (uid={uid})")
+        plt.show()
+    
+    def predict_per_user_XGB(self, test_df, feature_df, feature_list, valid_uid_list=None, output_name='CityName'):
+        if valid_uid_list is not None:
+            test_df = test_df[test_df['uid'].isin(valid_uid_list)]
+            feature_df = feature_df[feature_df['uid'].isin(valid_uid_list)]
+        dynamic_df = test_df
+        static_df = feature_df
+        df = dynamic_df.merge(static_df, on='uid', how='left')
+        test_df = df[feature_list].copy()
+        test_df = test_df.drop(columns=['x', 'y'])
+        results = []
+        uid_list = test_df['uid'].unique()
+        total = len(uid_list)
+        for idx, uid in enumerate(uid_list):
+            raw_uid = df[df['uid'] == uid].copy()
+            X_uid = test_df[test_df['uid'] == uid].copy()
+            reg_x, reg_y = joblib.load(f'./ckpt/XGB/{output_name}/xgb_uid_{uid}.pkl')
+            X_uid_input = X_uid.drop(columns=['uid'])
+            y_pred_x = reg_x.predict(X_uid_input)
+            y_pred_y = reg_y.predict(X_uid_input)
+            for i, row in raw_uid.iterrows():
+                results.append({
+                    'uid': row['uid'],
+                    'd': row['d'],
+                    't': row['t'],
+                    'x': int(round(y_pred_x[i - X_uid.index[0]])),
+                    'y': int(round(y_pred_y[i - X_uid.index[0]]))
+                })
+            print(f'預測進度 {idx + 1}/{total}: uid {uid}', end='\r')
+        results = pd.DataFrame(results)
+        output_df = results[['uid', 'd', 't', 'x', 'y']].astype(int)
+        os.makedirs(f'./Predictions/XGB', exist_ok=True)
+        output_df.to_csv(f'./Predictions/XGB/{output_name}_Per_user_XGB.csv', index=False)
+        print(f'\n預測完成，結果已儲存到 ./Predictions/XGB/{output_name}_Per_user_XGB.csv')
+        return output_df
+
+    def Per_user_LightGBM(self, X, y, n_estimators=100, random_state=42, output_name='CityName', use_gpu=False):
+        os.makedirs(f'./ckpt/LGBM/{output_name}', exist_ok=True)
+        uid_list = X['uid'].unique()
+        total = len(uid_list)
+        for i, uid in enumerate(uid_list):
+            X_uid = X[X['uid'] == uid].copy()
+            y_uid = y[y['uid'] == uid][['x', 'y']]
+            if use_gpu:
+                reg_x = lgb.LGBMRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1, device='gpu', verbosity=-1)
+                reg_y = lgb.LGBMRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1, device='gpu', verbosity=-1)
+            else:
+                reg_x = lgb.LGBMRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1, verbosity=-1)
+                reg_y = lgb.LGBMRegressor(n_estimators=n_estimators, random_state=random_state, n_jobs=-1, verbosity=-1)
+            reg_x.fit(X_uid.drop(columns=['uid']), y_uid['x'])
+            reg_y.fit(X_uid.drop(columns=['uid']), y_uid['y'])
+            joblib.dump((reg_x, reg_y), f'./ckpt/LGBM/{output_name}/lgbm_uid_{uid}.pkl')
+            print(f'訓練進度 {i + 1}/{total}: uid {uid}', end='\r')
+        print(f'\n訓練完成，模型已儲存到 ./ckpt/LGBM/{output_name}/')
+
+    def predict_per_user_LightGBM(self, test_df, feature_df, feature_list, valid_uid_list=None, output_name='CityName'):
+        if valid_uid_list is not None:
+            test_df = test_df[test_df['uid'].isin(valid_uid_list)]
+            feature_df = feature_df[feature_df['uid'].isin(valid_uid_list)]
+        dynamic_df = test_df
+        static_df = feature_df
+        df = dynamic_df.merge(static_df, on='uid', how='left')
+        test_df = df[feature_list].copy()
+        test_df = test_df.drop(columns=['x', 'y'])
+        results = []
+        uid_list = test_df['uid'].unique()
+        total = len(uid_list)
+        for idx, uid in enumerate(uid_list):
+            raw_uid = df[df['uid'] == uid].copy()
+            X_uid = test_df[test_df['uid'] == uid].copy()
+            reg_x, reg_y = joblib.load(f'./ckpt/LGBM/{output_name}/lgbm_uid_{uid}.pkl')
+            X_uid_input = X_uid.drop(columns=['uid'])
+            y_pred_x = reg_x.predict(X_uid_input)
+            y_pred_y = reg_y.predict(X_uid_input)
+            for i, row in raw_uid.iterrows():
+                results.append({
+                    'uid': row['uid'],
+                    'd': row['d'],
+                    't': row['t'],
+                    'x': int(round(y_pred_x[i - X_uid.index[0]])),
+                    'y': int(round(y_pred_y[i - X_uid.index[0]]))
+                })
+            print(f'預測進度 {idx + 1}/{total}: uid {uid}', end='\r')
+        results = pd.DataFrame(results)
+        output_df = results[['uid', 'd', 't', 'x', 'y']].astype(int)
+        os.makedirs(f'./Predictions/LGBM', exist_ok=True)
+        output_df.to_csv(f'./Predictions/LGBM/{output_name}_Per_user_LGBM.csv', index=False)
+        print(f'\n預測完成，結果已儲存到 ./Predictions/LGBM/{output_name}_Per_user_LGBM.csv')
         return output_df
 
     def Evaluation(self, generated_data_input, reference_data_input, validator=False, city_name=None, raw_data_path=None):
@@ -169,36 +297,84 @@ if __name__ == "__main__":
     train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv')
     test_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
     feature_df = pd.read_csv('./Stability/A_activity_space.csv')
-    feature_list = ['uid', 'd', 't', 'x', 'y','working_day', 'home_x', 'home_y', 'work_x', 'work_y',
-                    'bbox_xmin', 'bbox_ymin', 'bbox_xmax', 'bbox_ymax', 'hotspot_radius', 'act_entropy']
+    feature_list = ['uid', 't', 'x', 'y','working_day']
 
+    # model.plot_importance_per_user_XGB(uid=216, output_name='A', max_num_features=10)
 
-
+    # LightGBM
     thresholds = [0,9999]
     for i in range(len(thresholds) - 1):
         lower = thresholds[i]
         upper = thresholds[i + 1]
-
         filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
         valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
         if len(valid_uid_list) > 10000:
             valid_uid_list = valid_uid_list[:10000]
         print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
-
         # DataPreparation
         X, y = model.DataPreparation(train_df, feature_df, feature_list, valid_uid_list)
-
         # Train
-        model.Per_user_RF(X, y, n_estimators=100, random_state=42, output_name='A')
-
+        model.Per_user_LightGBM(X, y, n_estimators=100, random_state=42, output_name='A')
         # Predict
-        predictions = model.predict_per_user_RF(test_df, 
+        predictions = model.predict_per_user_LightGBM(test_df, 
                                                 feature_df=feature_df, 
                                                 feature_list=feature_list,
                                                 valid_uid_list=valid_uid_list, 
                                                 output_name='A')
-        
         # Evaluation
         generated_data_input = predictions
         reference_data_input = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
         final_GEOBLEU_score, final_DTW_score = model.Evaluation(generated_data_input, reference_data_input)
+
+
+    # # XGB
+    # thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
+    # max_len = 3000
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
+    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+    #     if len(valid_uid_list) > max_len:
+    #         valid_uid_list = valid_uid_list[:max_len]
+    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+    #     # DataPreparation
+    #     X, y = model.DataPreparation(train_df, feature_df, feature_list, valid_uid_list)
+    #     # Train
+    #     model.Per_user_XGB(X, y, n_estimators=100, random_state=42, output_name='A')
+    #     # Predict
+    #     predictions = model.predict_per_user_XGB(test_df, 
+    #                                             feature_df=feature_df, 
+    #                                             feature_list=feature_list,
+    #                                             valid_uid_list=valid_uid_list, 
+    #                                             output_name='A')
+    #     # Evaluation
+    #     generated_data_input = predictions
+    #     reference_data_input = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    #     final_GEOBLEU_score, final_DTW_score = model.Evaluation(generated_data_input, reference_data_input)
+
+
+    # # RF
+    # thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
+    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+    #     if len(valid_uid_list) > 3000:
+    #         valid_uid_list = valid_uid_list[:3000]
+    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+    #     # DataPreparation
+    #     X, y = model.DataPreparation(train_df, feature_df, feature_list, valid_uid_list)
+    #     # Train
+    #     model.Per_user_RF(X, y, n_estimators=100, random_state=42, output_name='A')
+    #     # Predict
+    #     predictions = model.predict_per_user_RF(test_df, 
+    #                                             feature_df=feature_df, 
+    #                                             feature_list=feature_list,
+    #                                             valid_uid_list=valid_uid_list, 
+    #                                             output_name='A')
+    #     # Evaluation
+    #     generated_data_input = predictions
+    #     reference_data_input = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    #     final_GEOBLEU_score, final_DTW_score = model.Evaluation(generated_data_input, reference_data_input)
