@@ -150,8 +150,14 @@ class ModelZoo:
                     x_mode = t_df['x'].mode().values[0]
                     y_mode = t_df['y'].mode().values[0]
                 else:
-                    x_mode = x_user_global_mode.values[0] if not x_user_global_mode.empty else 0 # 如果都沒有值，則設為0
-                    y_mode = y_user_global_mode.values[0] if not y_user_global_mode.empty else 0
+                    if not x_user_global_mode.empty and not y_user_global_mode.empty:
+                        x_mode = x_user_global_mode.values[0]
+                        y_mode = y_user_global_mode.values[0] 
+                    else:
+                        x_mode_working = user_df_working_day[user_df_working_day['t'] == t]['x'].mode()
+                        y_mode_working = user_df_working_day[user_df_working_day['t'] == t]['y'].mode()
+                        x_mode = x_mode_working.values[0] if not x_mode_working.empty else user_df_working_day['x'].mode().values[0]
+                        y_mode = y_mode_working.values[0] if not y_mode_working.empty else user_df_working_day['y'].mode().values[0]
                 result.append({'uid': uid, 't': t, 'x': x_mode, 'y': y_mode, 'working_day': 0})
 
             print(f'訓練進度: {i+1}/{len(valid_uid_list)} 使用者ID={uid}', end='\r')
@@ -457,9 +463,9 @@ class ModelZoo:
         print(f"Per_User_Markov_working_day: 執行時間: {elapsed_time//60:.2f}min")
         return prediction_df
 
-    def Evaluation(self, generated_data_input, reference_data_input, validator=False, city_name=None, raw_data_path=None):
+    def Evaluation(self, generated_data_input, reference_data_input, valid=False, city_name=None, raw_data_path=None):
         # 檢查生成的資料是否符合規範
-        if validator:
+        if valid:
             validator.main(city_name, raw_data_path, generated_data_input)
 
         # 讀取生成與參考資料
@@ -593,30 +599,35 @@ if __name__ == "__main__":
     #     )
     #     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
-    # # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day-->A_y
-    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
-    # raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
+    # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day-->A_y
+    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv', header=0)
+    raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
     # train_data_df = raw_train_data_df[raw_train_data_df['d'] <= 45]
     # test_data_df = raw_train_data_df[raw_train_data_df['d'] > 45]
 
-    # std_model_zoo = ModelZoo(train_data_df, test_data_df)
+    std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
 
-    # thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
-    # for i in range(len(thresholds) - 1):
-    #     lower = thresholds[i]
-    #     upper = thresholds[i + 1]
+    thresholds = [0,9999]
+    for i in range(len(thresholds) - 1):
+        lower = thresholds[i]
+        upper = thresholds[i + 1]
 
-    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
-    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
-    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+        filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+        valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+        print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
 
-    #     std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_std{upper}', early_stop=3000)
+        # std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_std{upper}', early_stop=3000)
+        std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_submit', early_stop=3000)
 
-    #     final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-    #         generated_data_input = f'./Predictions/A_y_std{upper}_Per_User_Per_t_Mode_working_day.csv',
-    #         reference_data_input = test_data_df,
-    #     )
-    #     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+        final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+            generated_data_input = f'./Predictions/A_y_submit_Per_User_Per_t_Mode_working_day.csv',
+            reference_data_input = raw_test_data_df,
+            valid=True,
+            city_name='a',
+            raw_data_path='./Data/city_A_challengedata.csv'
+        )
+        print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day
     # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
@@ -746,89 +757,89 @@ if __name__ == "__main__":
     以下用於檢查生成的資料與GT資料的差異
     這段程式碼會生成點線圖和熱力圖來檢查
     """
-    # 輸出點線圖來檢查
-    city = 'A'
-    std = 9999
-    raw_df_before = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
-    raw_df_after = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
-    generated_df = pd.read_csv(f'./Predictions/{city}_std{std}_Per_User_Markov_working_day.csv')
-    result_uids = generated_df['uid'].unique()
+    # # 輸出點線圖來檢查
+    # city = 'A'
+    # std = 9999
+    # raw_df_before = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
+    # raw_df_after = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
+    # generated_df = pd.read_csv(f'./Predictions/{city}_std{std}_Per_User_Markov_working_day.csv')
+    # result_uids = generated_df['uid'].unique()
 
-    GT_df_before = raw_df_before[raw_df_before['uid'].isin(result_uids)]
-    GT_df_after = raw_df_after[raw_df_after['uid'].isin(result_uids)]
+    # GT_df_before = raw_df_before[raw_df_before['uid'].isin(result_uids)]
+    # GT_df_after = raw_df_after[raw_df_after['uid'].isin(result_uids)]
 
-    fig = plt.figure(figsize=(30, 12))
-    for i, uid in enumerate(result_uids[:5]):
-        GT_uid_before = GT_df_before[GT_df_before['uid'] == uid]
-        GT_uid_after = GT_df_after[GT_df_after['uid'] == uid]
-        generated_uid = generated_df[generated_df['uid'] == uid]
+    # fig = plt.figure(figsize=(30, 12))
+    # for i, uid in enumerate(result_uids[:5]):
+    #     GT_uid_before = GT_df_before[GT_df_before['uid'] == uid]
+    #     GT_uid_after = GT_df_after[GT_df_after['uid'] == uid]
+    #     generated_uid = generated_df[generated_df['uid'] == uid]
 
-        # GT
-        ax_gt = fig.add_subplot(2,5,i+1)
-        ax_gt.plot(GT_uid_before['x'], GT_uid_before['y'], marker='o', markersize=2, linestyle='--', color='red', alpha=0.3, linewidth=1, label='Before')
-        ax_gt.plot(GT_uid_after['x'], GT_uid_after['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.3, linewidth=2, label='After')
-        ax_gt.set_title(f'City:{city} uid:{uid} (GT)---std[{std-1},{std})---{GT_uid_after.shape[0]}點', fontsize=10)
-        ax_gt.tick_params(axis='x', labelsize=10)
-        ax_gt.tick_params(axis='y', labelsize=10)
-        ax_gt.set_xlim(1, 200)
-        ax_gt.set_ylim(1, 200)
-        ax_gt.set_aspect('equal', adjustable='box')  
-        ax_gt.invert_yaxis()
-        ax_gt.grid(True, alpha=0.3)
-        ax_gt.xaxis.set_major_locator(MultipleLocator(20))
-        ax_gt.legend(fontsize=8, loc='best')
-        ax_gt.xaxis.set_major_locator(MultipleLocator(20))
+    #     # GT
+    #     ax_gt = fig.add_subplot(2,5,i+1)
+    #     ax_gt.plot(GT_uid_before['x'], GT_uid_before['y'], marker='o', markersize=2, linestyle='--', color='red', alpha=0.3, linewidth=1, label='Before')
+    #     ax_gt.plot(GT_uid_after['x'], GT_uid_after['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.3, linewidth=2, label='After')
+    #     ax_gt.set_title(f'City:{city} uid:{uid} (GT)---std[{std-1},{std})---{GT_uid_after.shape[0]}點', fontsize=10)
+    #     ax_gt.tick_params(axis='x', labelsize=10)
+    #     ax_gt.tick_params(axis='y', labelsize=10)
+    #     ax_gt.set_xlim(1, 200)
+    #     ax_gt.set_ylim(1, 200)
+    #     ax_gt.set_aspect('equal', adjustable='box')  
+    #     ax_gt.invert_yaxis()
+    #     ax_gt.grid(True, alpha=0.3)
+    #     ax_gt.xaxis.set_major_locator(MultipleLocator(20))
+    #     ax_gt.legend(fontsize=8, loc='best')
+    #     ax_gt.xaxis.set_major_locator(MultipleLocator(20))
 
-        # Generated
-        ax_generated = fig.add_subplot(2,5,i+6)
-        ax_generated.plot(generated_uid['x'], generated_uid['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.2, label=f'uid={uid} (Generated)')
-        ax_generated.set_title(f'City:{city} uid:{uid} (Gen)---std[{std-1},{std})---{GT_uid_after.shape[0]}點', fontsize=10)
-        ax_generated.tick_params(axis='x', labelsize=10)
-        ax_generated.tick_params(axis='y', labelsize=10)
-        ax_generated.set_xlim(1, 200)
-        ax_generated.set_ylim(1, 200)
-        ax_generated.set_aspect('equal', adjustable='box')  
-        ax_generated.invert_yaxis()
-        ax_generated.grid(True, alpha=0.3)
-        ax_generated.xaxis.set_major_locator(MultipleLocator(20))
+    #     # Generated
+    #     ax_generated = fig.add_subplot(2,5,i+6)
+    #     ax_generated.plot(generated_uid['x'], generated_uid['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.2, label=f'uid={uid} (Generated)')
+    #     ax_generated.set_title(f'City:{city} uid:{uid} (Gen)---std[{std-1},{std})---{GT_uid_after.shape[0]}點', fontsize=10)
+    #     ax_generated.tick_params(axis='x', labelsize=10)
+    #     ax_generated.tick_params(axis='y', labelsize=10)
+    #     ax_generated.set_xlim(1, 200)
+    #     ax_generated.set_ylim(1, 200)
+    #     ax_generated.set_aspect('equal', adjustable='box')  
+    #     ax_generated.invert_yaxis()
+    #     ax_generated.grid(True, alpha=0.3)
+    #     ax_generated.xaxis.set_major_locator(MultipleLocator(20))
     
-    # 輸出熱力圖來檢查
-    def plot_heatmap(ax, df, uid, title, cmap='Reds'):
-        heatmap, _, _ = np.histogram2d(
-            df['x'], df['y'],
-            bins=[200, 200], range=[[1, 201], [1, 201]]
-        )
-        im = ax.imshow(
-            np.log1p(heatmap.T),
-            origin='lower',
-            cmap='hot',
-            extent=[1, 200, 1, 200],
-            aspect='equal'
-        )
-        ax.set_title(title, fontsize=10)
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_xlim(1, 200)
-        ax.set_ylim(1, 200)
-        ax.invert_yaxis()
-        ax.grid(True, alpha=0.3)
-        ax.xaxis.set_major_locator(MultipleLocator(20))
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,label='log(出現次數+1)')
+    # # 輸出熱力圖來檢查
+    # def plot_heatmap(ax, df, uid, title, cmap='Reds'):
+    #     heatmap, _, _ = np.histogram2d(
+    #         df['x'], df['y'],
+    #         bins=[200, 200], range=[[1, 201], [1, 201]]
+    #     )
+    #     im = ax.imshow(
+    #         np.log1p(heatmap.T),
+    #         origin='lower',
+    #         cmap='hot',
+    #         extent=[1, 200, 1, 200],
+    #         aspect='equal'
+    #     )
+    #     ax.set_title(title, fontsize=10)
+    #     ax.set_xlabel('x')
+    #     ax.set_ylabel('y')
+    #     ax.set_xlim(1, 200)
+    #     ax.set_ylim(1, 200)
+    #     ax.invert_yaxis()
+    #     ax.grid(True, alpha=0.3)
+    #     ax.xaxis.set_major_locator(MultipleLocator(20))
+    #     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,label='log(出現次數+1)')
 
-    GT_df = raw_df_after[raw_df_after['uid'].isin(result_uids)]
-    fig = plt.figure(figsize=(24, 10))
-    for i, uid in enumerate(result_uids[:5]):
-        GT_uid = GT_df[GT_df['uid'] == uid]
-        generated_uid = generated_df[generated_df['uid'] == uid]
+    # GT_df = raw_df_after[raw_df_after['uid'].isin(result_uids)]
+    # fig = plt.figure(figsize=(24, 10))
+    # for i, uid in enumerate(result_uids[:5]):
+    #     GT_uid = GT_df[GT_df['uid'] == uid]
+    #     generated_uid = generated_df[generated_df['uid'] == uid]
 
-        # GT 熱力圖
-        ax_gt = fig.add_subplot(2, 5, i + 1)
-        plot_heatmap(ax_gt, GT_uid, uid, f'City:{city} uid:{uid} (GT)---std[{std-1},{std})---{GT_uid.shape[0]}點')
+    #     # GT 熱力圖
+    #     ax_gt = fig.add_subplot(2, 5, i + 1)
+    #     plot_heatmap(ax_gt, GT_uid, uid, f'City:{city} uid:{uid} (GT)---std[{std-1},{std})---{GT_uid.shape[0]}點')
 
-        # Generated 熱力圖
-        ax_gen = fig.add_subplot(2, 5, i + 6)
-        plot_heatmap(ax_gen, generated_uid, uid, f'City:{city} uid:{uid} (Gen)---std[{std-1},{std})---{GT_uid.shape[0]}點')
+    #     # Generated 熱力圖
+    #     ax_gen = fig.add_subplot(2, 5, i + 6)
+    #     plot_heatmap(ax_gen, generated_uid, uid, f'City:{city} uid:{uid} (Gen)---std[{std-1},{std})---{GT_uid.shape[0]}點')
 
-    plt.tight_layout()
-    plt.show()
+    # plt.tight_layout()
+    # plt.show()
 

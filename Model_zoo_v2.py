@@ -292,43 +292,43 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
-    model = ModelZoo()
-    raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv')
-    train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv')
-    test_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
-    feature_df = pd.read_csv('./Stability/A_activity_space.csv')
-    feature_list = ['uid', 't', 'x', 'y','working_day']
+    # model = ModelZoo()
+    # raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv')
+    # train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv')
+    # test_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    # feature_df = pd.read_csv('./Stability/A_activity_space.csv')
+    # feature_list = ['uid', 't', 'x', 'y','working_day']
 
     # model.plot_importance_per_user_XGB(uid=216, output_name='A', max_num_features=10)
 
-    # LightGBM
-    thresholds = [0,9999]
-    for i in range(len(thresholds) - 1):
-        lower = thresholds[i]
-        upper = thresholds[i + 1]
-        filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
-        valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
-        if len(valid_uid_list) > 10000:
-            valid_uid_list = valid_uid_list[:10000]
-        print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
-        # DataPreparation
-        X, y = model.DataPreparation(train_df, feature_df, feature_list, valid_uid_list)
-        # Train
-        model.Per_user_LightGBM(X, y, n_estimators=100, random_state=42, output_name='A')
-        # Predict
-        predictions = model.predict_per_user_LightGBM(test_df, 
-                                                feature_df=feature_df, 
-                                                feature_list=feature_list,
-                                                valid_uid_list=valid_uid_list, 
-                                                output_name='A')
-        # Evaluation
-        generated_data_input = predictions
-        reference_data_input = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
-        final_GEOBLEU_score, final_DTW_score = model.Evaluation(generated_data_input, reference_data_input)
+    # # LightGBM
+    # thresholds = [0,9999]
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
+    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+    #     if len(valid_uid_list) > 10000:
+    #         valid_uid_list = valid_uid_list[:10000]
+    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+    #     # DataPreparation
+    #     X, y = model.DataPreparation(train_df, feature_df, feature_list, valid_uid_list)
+    #     # Train
+    #     model.Per_user_LightGBM(X, y, n_estimators=100, random_state=42, output_name='A')
+    #     # Predict
+    #     predictions = model.predict_per_user_LightGBM(test_df, 
+    #                                             feature_df=feature_df, 
+    #                                             feature_list=feature_list,
+    #                                             valid_uid_list=valid_uid_list, 
+    #                                             output_name='A')
+    #     # Evaluation
+    #     generated_data_input = predictions
+    #     reference_data_input = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    #     final_GEOBLEU_score, final_DTW_score = model.Evaluation(generated_data_input, reference_data_input)
 
 
     # # XGB
-    # thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
+    # thresholds = [3, 4]
     # max_len = 3000
     # for i in range(len(thresholds) - 1):
     #     lower = thresholds[i]
@@ -378,3 +378,93 @@ if __name__ == "__main__":
     #     generated_data_input = predictions
     #     reference_data_input = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
     #     final_GEOBLEU_score, final_DTW_score = model.Evaluation(generated_data_input, reference_data_input)
+
+    """
+    以下用於檢查生成的資料與GT資料的差異
+    這段程式碼會生成點線圖和熱力圖來檢查
+    """
+    # 輸出點線圖來檢查
+    city = 'A'
+    std = 4
+    raw_df_before = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
+    raw_df_after = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
+    generated_df = pd.read_csv(f'./Predictions./XGB/{city}_Per_user_XGB.csv')
+    result_uids = generated_df['uid'].unique()
+
+    GT_df_before = raw_df_before[raw_df_before['uid'].isin(result_uids)]
+    GT_df_after = raw_df_after[raw_df_after['uid'].isin(result_uids)]
+
+    fig = plt.figure(figsize=(30, 12))
+    for i, uid in enumerate(result_uids[:5]):
+        GT_uid_before = GT_df_before[GT_df_before['uid'] == uid]
+        GT_uid_after = GT_df_after[GT_df_after['uid'] == uid]
+        generated_uid = generated_df[generated_df['uid'] == uid]
+
+        # GT
+        ax_gt = fig.add_subplot(2,5,i+1)
+        ax_gt.plot(GT_uid_before['x'], GT_uid_before['y'], marker='o', markersize=2, linestyle='--', color='red', alpha=0.3, linewidth=1, label='Before')
+        ax_gt.plot(GT_uid_after['x'], GT_uid_after['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.3, linewidth=2, label='After')
+        ax_gt.set_title(f'City:{city} uid:{uid} (GT)---std[{std-1},{std})---{GT_uid_after.shape[0]}點', fontsize=10)
+        ax_gt.tick_params(axis='x', labelsize=10)
+        ax_gt.tick_params(axis='y', labelsize=10)
+        ax_gt.set_xlim(1, 200)
+        ax_gt.set_ylim(1, 200)
+        ax_gt.set_aspect('equal', adjustable='box')  
+        ax_gt.invert_yaxis()
+        ax_gt.grid(True, alpha=0.3)
+        ax_gt.xaxis.set_major_locator(MultipleLocator(20))
+        ax_gt.legend(fontsize=8, loc='best')
+        ax_gt.xaxis.set_major_locator(MultipleLocator(20))
+
+        # Generated
+        ax_generated = fig.add_subplot(2,5,i+6)
+        ax_generated.plot(generated_uid['x'], generated_uid['y'], marker='o', markersize=2, linestyle='-', color='green', alpha=0.2, label=f'uid={uid} (Generated)')
+        ax_generated.set_title(f'City:{city} uid:{uid} (Gen)---std[{std-1},{std})---{GT_uid_after.shape[0]}點', fontsize=10)
+        ax_generated.tick_params(axis='x', labelsize=10)
+        ax_generated.tick_params(axis='y', labelsize=10)
+        ax_generated.set_xlim(1, 200)
+        ax_generated.set_ylim(1, 200)
+        ax_generated.set_aspect('equal', adjustable='box')  
+        ax_generated.invert_yaxis()
+        ax_generated.grid(True, alpha=0.3)
+        ax_generated.xaxis.set_major_locator(MultipleLocator(20))
+    
+    # 輸出熱力圖來檢查
+    def plot_heatmap(ax, df, uid, title, cmap='Reds'):
+        heatmap, _, _ = np.histogram2d(
+            df['x'], df['y'],
+            bins=[200, 200], range=[[1, 201], [1, 201]]
+        )
+        im = ax.imshow(
+            np.log1p(heatmap.T),
+            origin='lower',
+            cmap='hot',
+            extent=[1, 200, 1, 200],
+            aspect='equal'
+        )
+        ax.set_title(title, fontsize=10)
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_xlim(1, 200)
+        ax.set_ylim(1, 200)
+        ax.invert_yaxis()
+        ax.grid(True, alpha=0.3)
+        ax.xaxis.set_major_locator(MultipleLocator(20))
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,label='log(出現次數+1)')
+
+    GT_df = raw_df_after[raw_df_after['uid'].isin(result_uids)]
+    fig = plt.figure(figsize=(24, 10))
+    for i, uid in enumerate(result_uids[:5]):
+        GT_uid = GT_df[GT_df['uid'] == uid]
+        generated_uid = generated_df[generated_df['uid'] == uid]
+
+        # GT 熱力圖
+        ax_gt = fig.add_subplot(2, 5, i + 1)
+        plot_heatmap(ax_gt, GT_uid, uid, f'City:{city} uid:{uid} (GT)---std[{std-1},{std})---{GT_uid.shape[0]}點')
+
+        # Generated 熱力圖
+        ax_gen = fig.add_subplot(2, 5, i + 6)
+        plot_heatmap(ax_gen, generated_uid, uid, f'City:{city} uid:{uid} (Gen)---std[{std-1},{std})---{GT_uid.shape[0]}點')
+
+    plt.tight_layout()
+    plt.show()
