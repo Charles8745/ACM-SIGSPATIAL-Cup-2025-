@@ -364,7 +364,7 @@ class DataPreprocessor:
         print(f"Geweke diagnostic 結果已儲存至 ./Stability/{output_name}_working_day_geweke.csv")
         return geweke_df
 
-    def extract_features(self, input_x_train, input_y_train, output_name='Cityname', valid_uid_list=None):
+    def extract_features(self, input_x_train, input_y_train, output_name='Cityname', valid_uid_list=None):  
         # 讀取資料
         if isinstance(input_x_train, str):
             input_x_train = pd.read_csv(input_x_train, header=0, dtype=int)
@@ -1073,13 +1073,76 @@ class DataPreprocessor:
             end_day = user_df['d'].max()
             ani.save(f'./Animations/{output_name}_uid{uid}_days{start_day}~{end_day}_trajectory_animation_withPOI.gif', fps=2, writer='pillow', dpi=150)
             plt.title(f"UID:{uid} 的軌跡動畫")
-        
+
+    def mode_proportion(self, train_df, std_df, output_name='Cityname', thresholds=[0, 9999], early_stop=3000):
+        """
+        計算每個uid各個時間下眾數的比例
+        """
+        for i in range(len(thresholds) - 1):
+            lower = thresholds[i]
+            upper = thresholds[i + 1]
+
+            # 1、過濾出此區間的人
+            filter_std_df = std_df[(std_df['x_std_mean'] >= lower) | (std_df['y_std_mean'] >= lower)]
+            valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+            if len(valid_uid_list) > early_stop:
+                valid_uid_list = valid_uid_list[:early_stop]
+            print(f"x|y std >= {lower},x&y std < {upper} 採用的使用者ID數量: {len(valid_uid_list)}")
+
+            # 2、計算此區間每個人的眾數比例
+            result = []
+            times = np.arange(0, 48)  
+            for idx, uid in enumerate(valid_uid_list):
+                user_df = train_df[train_df['uid'] == uid]
+                for time in times:
+                    time_df = user_df[user_df['t'] == time]
+                    if not time_df.empty:
+                        mode_value = time_df['x'].mode().values[0]
+                        x_mode_count = (time_df['x'] == mode_value).sum()
+                        x_total_count = time_df['x'].count()
+                        proportion = x_mode_count / x_total_count
+                        result.append({'uid': uid, 'time': time, 'proportion': proportion})
+                    else:
+                        result.append({'uid': uid, 'time': time, 'proportion': None})
+                print(f"計算進度: {idx + 1}/{len(valid_uid_list)}", end='\r')
+            result_df = pd.DataFrame(result)
+            result_df.to_csv(f'./Stability/{output_name}_mode_proportion_{lower}_{upper}.csv', index=False)
+            print(f"已儲存眾數比例結果至 ./Stability/{output_name}_mode_proportion_{lower}_{upper}.csv")
+            print(f"眾數比例計算完成: {lower} <= x|y std < {upper}, 眾數平均佔有比為: {result_df['proportion'].mean()}")
 
 """
 測試程式碼
 """
 if __name__ == "__main__":
-    Adp = DataPreprocessor()
+    # # 計算眾數比例
+    # # Adp = DataPreprocessor()
+    # # train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv')
+    # # std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv')
+    # thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]  # x|y std 的閾值
+    # # Adp.mode_proportion(train_df=train_df,
+    # #                     std_df=std_df,
+    # #                     output_name='A_x',
+    # #                     thresholds=thresholds,
+    # #                     early_stop=3000)
+    # fig, ax = plt.subplots(figsize=(10, 10))
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
+    #     proportion_df = pd.read_csv(f'./Stability/A_x_mode_proportion_{lower}_{upper}.csv')
+    #     mean_proportion = proportion_df.groupby('time')['proportion'].mean().reset_index()
+    #     ax.plot(mean_proportion['time'], mean_proportion['proportion'], label=f'{lower} <= x|y std < {upper}', marker='o')
+    # ax.set_xlim(0, 47)
+    # ax.xaxis.set_major_locator(MultipleLocator(2))
+    # plt.xlabel('Time (half-hour index)')
+    # plt.ylabel('Average Mode Proportion')
+    # plt.title('Average Mode Proportion by Time')    
+    # plt.legend()
+    # plt.grid(True, alpha=0.3)
+    # plt.show()
+
+
+    # #測試POI對齊
+    # Adp = DataPreprocessor()
     # poi_xy_arr=np.array([[135,77], [129,81], [135,82], [139,88],[53,177],[94,24],[113,38],[168,124]])
     # poi_latlon_arr = np.array([
     #     [35.171686742452046, 136.8819338645865],
@@ -1098,8 +1161,8 @@ if __name__ == "__main__":
     # Adp.mark_POI(grid_df=grid_df,
     #              output_name='A',
     #              output_img=True)
-    train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv') 
-    Adp.uid_trajectory_animation_with_POI(train_df, 
-                                          uid=24,
-                                          output_name='A',
-                                          end_day=7)
+    # train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv') 
+    # Adp.uid_trajectory_animation_with_POI(train_df, 
+    #                                       uid=24,
+    #                                       output_name='A',
+    #                                       end_day=7)

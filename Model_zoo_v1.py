@@ -214,6 +214,120 @@ class ModelZoo:
         print(f"Per_User_Per_t_Mode_working_day: 執行時間: {elapsed_time//60:.2f}min")
         return prediction_df
 
+    def Per_User_Per_t_Mode_working_day_top_p(self, feature_df, valid_uid_list, output_name='CityName', early_stop=None, top_p=0.7):
+        if len(valid_uid_list) > early_stop:
+            valid_uid_list = valid_uid_list[:early_stop]
+        
+        # 1、訓練，先記錄各uid這個時間段下的超過top_p的眾數和比例，要注意補值方式有更動
+        result = []
+        for idx, uid in enumerate(valid_uid_list):
+            user_df = self.train_data[self.train_data['uid'] == uid]
+            # 當t<=12 or t >= 40補值邏輯
+            if not pd.isnull(feature_df[feature_df['uid'] == uid]['home_x'].values[0]) :
+                global_home_x = feature_df[feature_df['uid'] == uid]['home_x'].values[0] 
+                global_home_y = feature_df[feature_df['uid'] == uid]['home_y'].values[0] 
+            else:
+                global_home_x = user_df['x'].mode().values[0]
+                global_home_y = user_df['y'].mode().values[0]
+
+            # working day 訓練
+            user_df_working_day = user_df[user_df['working_day']==1]
+            for t in np.arange(0, 48):
+                t_df = user_df_working_day[user_df_working_day['t'] == t]
+                xy_counts = t_df.groupby(['x', 'y']).size().reset_index(name='count')
+                xy_counts = xy_counts.sort_values('count', ascending=False).reset_index(drop=True)
+                total = xy_counts['count'].sum()
+                temp_res = [] # 儲存此t下的top_p的眾數和比例
+                if not t_df.empty: # 此t有資料
+                    sum = 0
+                    i = 0
+                    while sum < top_p:
+                        row = xy_counts.iloc[i]
+                        x_mode = int(row['x'])
+                        y_mode = int(row['y'])
+                        ratio = round(row['count'] / total, 3)
+                        sum += ratio
+                        i += 1
+                        temp_res.append([int(x_mode), int(y_mode), float(ratio)])
+
+                else: # 此t沒有資料
+                    if t<=12 or t >= 40: # 若在早上0點到6點及晚上8點到12點，取home點
+                        temp_res.append([int(global_home_x), int(global_home_y), 1.0])
+                    else: # 其他時間取上一個點的mode
+                        temp_res = result[-1]['mode']
+                result.append({'uid': uid, 't': t, 'working_day': 1, 'mode': temp_res})
+
+            # non-working day 訓練
+            user_df_non_working_day = user_df[user_df['working_day']==0]
+            for t in np.arange(0, 48):
+                t_df = user_df_non_working_day[user_df_non_working_day['t'] == t]
+                xy_counts = t_df.groupby(['x', 'y']).size().reset_index(name='count')
+                xy_counts = xy_counts.sort_values('count', ascending=False).reset_index(drop=True)
+                total = xy_counts['count'].sum()
+                temp_res = [] # 儲存此t下的top_p的眾數和比例
+                if not t_df.empty: # 此t有資料
+                    sum = 0
+                    i = 0
+                    while sum < top_p:
+                        row = xy_counts.iloc[i]
+                        x_mode = int(row['x'])
+                        y_mode = int(row['y'])
+                        ratio = round(row['count'] / total, 3)
+                        sum += ratio
+                        i += 1
+                        temp_res.append([int(x_mode), int(y_mode), float(ratio)])
+
+                else: # 此t沒有資料
+                    if t<=12 or t >= 40: # 若在早上0點到6點及晚上8點到12點，取home點
+                        temp_res.append([int(global_home_x), int(global_home_y), 1.0])
+                    else: # 其他時間取上一個點的mode
+                        temp_res = result[-1]['mode']
+                result.append({'uid': uid, 't': t, 'working_day': 0, 'mode': temp_res})
+            print(f'訓練進度: {idx+1}/{len(valid_uid_list)} 使用者ID={uid}', end='\r')
+
+        train_mode_df = pd.DataFrame(result)
+        train_mode_df.to_csv(f'./ckpt/{output_name}_Per_User_Per_t_Mode_working_day_top_p.csv', index=False)
+        print(f"Per_User_Per_t_Mode_working_day_top_p: 結果已儲存至 ./ckpt/{output_name}_Per_User_Per_t_Mode_working_day_top_p.csv")
+
+        # 2、預測，依據測試資料的時間點，將模式依據機率應用到測試資料
+        result = []
+        for i, uid in enumerate(valid_uid_list):
+            train_user_df = train_mode_df[train_mode_df['uid'] == uid]
+            test_user_df = self.test_data[self.test_data['uid'] == uid]
+
+            # 依據ratio當權重選擇mode
+            def sample_xy_from_mode(mode_list):
+                xs = [item[0] for item in mode_list]
+                ys = [item[1] for item in mode_list]
+                ratios = [item[2] for item in mode_list]
+                idx = random.choices(range(len(mode_list)), weights=ratios, k=1)[0]
+                return xs[idx], ys[idx]
+
+            # 取得工作日和非工作日的模式
+            days = np.sort(test_user_df['d'].unique())
+            for day in days:
+                hours = np.sort(test_user_df[test_user_df['d'] == day]['t'].unique())
+                if test_user_df[test_user_df['d'] == day]['working_day'].values[0] == 1: # 工作日
+                    for hour in hours:
+                        mode_series = train_user_df[(train_user_df['t'] == hour) & (train_user_df['working_day'] == 1)]['mode']
+                        mode_list = mode_series.values[0]
+                        x, y = sample_xy_from_mode(mode_list)
+                        result.append({'uid': uid, 'd':day, 't': hour, 'x': x, 'y': y})
+                else: # 非工作日
+                    for hour in hours:
+                        mode_series = train_user_df[(train_user_df['t'] == hour) & (train_user_df['working_day'] == 0)]['mode']
+                        mode_list = mode_series.values[0]
+                        x, y = sample_xy_from_mode(mode_list)
+                        result.append({'uid': uid, 'd':day, 't': hour, 'x': x, 'y': y})
+
+            print(f'預測進度: {i+1}/{len(valid_uid_list)} 使用者ID={uid}', end='\r')
+        prediction_df = pd.DataFrame(result)
+        prediction_df = prediction_df[['uid', 'd', 't', 'x', 'y']].astype(int)
+
+        prediction_df.to_csv(f'./Predictions/{output_name}_Per_User_Per_t_Mode_working_day_top_p.csv', index=False)
+        print(f"Per_User_Per_t_Mode_working_day: 結果已儲存至 ./Predictions/{output_name}_Per_User_Per_t_Mode_working_day_top_p.csv")
+        return prediction_df
+
     def Per_User_Per_t_Mode_day_of_week(self, valid_uid_list, output_name, early_stop=None):
         os.makedirs('./Predictions', exist_ok=True)
         os.makedirs('./ckpt', exist_ok=True)
@@ -471,22 +585,18 @@ class ModelZoo:
         # 讀取生成與參考資料
         if isinstance(generated_data_input, pd.DataFrame):
             generated_df = generated_data_input
-            print(f'讀取生成資料: {generated_data_input}')
 
         elif isinstance(generated_data_input, str):
             generated_df = pd.read_csv(generated_data_input, header=0, dtype=int)
-            print(f'讀取生成資料: {generated_data_input}')
 
         else:
             raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
         
         if isinstance(reference_data_input, pd.DataFrame):
             reference_df = reference_data_input
-            print(f'讀取參考資料: {reference_data_input}')
  
         elif isinstance(reference_data_input, str):
             reference_df = pd.read_csv(reference_data_input, header=0, dtype=int)
-            print(f'讀取參考資料: {reference_data_input}')
 
         else:
             raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
@@ -527,10 +637,43 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
+    # # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day_top_p
+    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
+    raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv', header=0)
+    feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
+
+    mode_top_p_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+
+    thresholds = [0, 9999]
+    for i in range(len(thresholds) - 1):
+        lower = thresholds[i]
+        upper = thresholds[i + 1]
+
+        filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+        valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+        print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+
+        mode_top_p_zoo.Per_User_Per_t_Mode_working_day_top_p(
+            feature_df=feature_df,
+            valid_uid_list=valid_uid_list,
+            output_name=f'A_std{upper}',
+            early_stop=10000,
+            top_p=0.7
+        )
+
+        final_GEOBLEU_score, final_DTW_score = mode_top_p_zoo.Evaluation(
+            generated_data_input = f'./Predictions/A_std{upper}_Per_User_Per_t_Mode_working_day_top_p.csv',
+            reference_data_input = raw_test_data_df,
+        )
+        print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+
+  
+
     # # # 不同std分類對分數影響-->Per_User_Markov_working_day
-    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
-    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
-    # raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv', header=0)
+    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv', header=0)
+    # raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
 
     # Markov_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
 
@@ -543,11 +686,14 @@ if __name__ == "__main__":
     #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
     #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
 
-    #     Markov_model_zoo.Per_User_Markov_working_day(valid_uid_list=valid_uid_list, output_name=f'A_std{upper}', early_stop=10000, top_p=0.5)
+    #     Markov_model_zoo.Per_User_Markov_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_submit', early_stop=10000, top_p=0.5)
 
     #     final_GEOBLEU_score, final_DTW_score = Markov_model_zoo.Evaluation(
-    #         generated_data_input=f'./Predictions/A_std{upper}_Per_User_Markov_working_day.csv',
-    #         reference_data_input='./Training_Testing_Data/A_x_test.csv',
+    #         generated_data_input = f'./Predictions/A_y_submit_Per_User_Markov_working_day.csv',
+    #         reference_data_input = raw_test_data_df,
+    #         valid=True,
+    #         city_name='a',
+    #         raw_data_path='./Data/city_A_challengedata.csv'
     #     )
     #     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
@@ -599,35 +745,35 @@ if __name__ == "__main__":
     #     )
     #     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
-    # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day-->A_y
-    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
-    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv', header=0)
-    raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
-    # train_data_df = raw_train_data_df[raw_train_data_df['d'] <= 45]
-    # test_data_df = raw_train_data_df[raw_train_data_df['d'] > 45]
+    # # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day-->A_y
+    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv', header=0)
+    # raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
+    # # train_data_df = raw_train_data_df[raw_train_data_df['d'] <= 45]
+    # # test_data_df = raw_train_data_df[raw_train_data_df['d'] > 45]
 
-    std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
 
-    thresholds = [0,9999]
-    for i in range(len(thresholds) - 1):
-        lower = thresholds[i]
-        upper = thresholds[i + 1]
+    # thresholds = [0,9999]
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
 
-        filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
-        valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
-        print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
 
-        # std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_std{upper}', early_stop=3000)
-        std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_submit', early_stop=3000)
+    #     # std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_std{upper}', early_stop=3000)
+    #     std_model_zoo.Per_User_Per_t_Mode_working_day(valid_uid_list=valid_uid_list, output_name=f'A_y_submit', early_stop=3000)
 
-        final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-            generated_data_input = f'./Predictions/A_y_submit_Per_User_Per_t_Mode_working_day.csv',
-            reference_data_input = raw_test_data_df,
-            valid=True,
-            city_name='a',
-            raw_data_path='./Data/city_A_challengedata.csv'
-        )
-        print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    #     final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+    #         generated_data_input = f'./Predictions/A_y_submit_Per_User_Per_t_Mode_working_day.csv',
+    #         reference_data_input = raw_test_data_df,
+    #         valid=True,
+    #         city_name='a',
+    #         raw_data_path='./Data/city_A_challengedata.csv'
+    #     )
+    #     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day
     # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)

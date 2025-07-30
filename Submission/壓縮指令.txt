@@ -1,0 +1,1 @@
+"C:\Program Files\7-Zip\7z.exe" a -tgzip SpaceY_cityA_humob25_Per_User_Markov_working_day.csv.gz SpaceY_cityA_humob25_Per_User_Markov_working_day.csv
