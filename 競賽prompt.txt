@@ -1,0 +1,96 @@
+接者我想用LightGBM建模
+我目前除了原始資料格式:
+uid:使用者 ID,d:第幾天（1<del>60,t:每日的 30 分鐘時間片（0</del>47）,[x, y] 使用者所在的城市座（200x200 格網）, day_of_week:星期幾（0=週日, 1=週一, ..., 6=週六）, working_day 是否為工作日（1=是, 0=否）
+我還有做特徵工程得到每個uid的:
+2、home_x, home_y
+3、work_x, work_y
+4、commute_dist
+5、n_hotspots
+6、'bbox_xmin':, 'bbox_ymin', 'bbox_xmax', 'bbox_ymax'
+7、hotspot_radius
+8、act_entropy
+9、hotspot_centers
+我想預測這3000人61到75天的資料，test.csv會給uid,d,t,x,y,day_of_week,working_day而x,y都是999，而最後預測輸出格式為['uid', 'd', 't', 'x', 'y']
+
+接者我想用XGBoost建模
+我目前除了原始資料格式:
+uid:使用者 ID,d:第幾天（1<del>60,t:每日的 30 分鐘時間片（0</del>47）,[x, y] 使用者所在的城市座（200x200 格網）, day_of_week:星期幾（0=週日, 1=週一, ..., 6=週六）, working_day 是否為工作日（1=是, 0=否）
+我還有做特徵工程得到每個uid的:
+2、home_x, home_y
+3、work_x, work_y
+4、commute_dist
+5、n_hotspots
+6、'bbox_xmin':, 'bbox_ymin', 'bbox_xmax', 'bbox_ymax'
+7、hotspot_radius
+8、act_entropy
+9、hotspot_centers
+我想預測這3000人61到75天的資料，test.csv會給uid,d,t,x,y,day_of_week,working_day而x,y都是999，而最後預測輸出格式為['uid', 'd', 't', 'x', 'y']
+
+我想先用簡單的Random forest建模，把 (x, y) 合成一個 class label。要做normalization。
+我目前除了原始資料格式:
+uid:使用者 ID,d:第幾天（1~60,t:每日的 30 分鐘時間片（0~47）,[x, y]	使用者所在的城市座（200x200 格網）, day_of_week:星期幾（0=週日, 1=週一, ..., 6=週六）,  working_day	是否為工作日（1=是, 0=否）
+我還有做特徵工程得到每個uid的:
+2、home_x, home_y
+3、work_x, work_y
+4、commute_dist
+5、n_hotspots
+6、'bbox_xmin':, 'bbox_ymin', 'bbox_xmax', 'bbox_ymax'
+7、hotspot_radius
+8、act_entropy
+9、hotspot_centers
+我想預測這3000人61到75天的資料，test.csv會給uid,d,t,x,y,day_of_week,working_day而x,y都是999，而最後預測輸出格式為['uid', 'd', 't', 'x', 'y']
+
+我想去預測3000個人在一座城市61到75天所在的[X,Y]，我目前有1到60天的紀錄，要預測61~75天，詳細資料格式為:(uid,d,t,x,y)，舉例來說對「13781,57,34,83,94(uid,d,t,x,y)」這筆資料來說
+1、d是第幾天。
+2、t是每30分鐘紀錄一次，所以t=34代表17點。
+3、app紀錄位置，僅紀錄使用者使用app的時間段，並非連續。
+4、[x,y]並非經緯度，定義城市邊界框，從0開始，每個單位500m，範圍：x=0~200,y=0~200。
+
+
+我需要一個使用特徵工程+hdbscan 分群的完整 Python範本，這段程式須用於整個大資料集（比如讀入 CSV，或是能輸入指定的uid list，讀csv中指定的uids）。詳細資料格式為:(uid,d,t,x,y,day_of_week,working_day)，舉例來說對「13781,57,34,83,94,1,1」這筆資料來說:
+1、d是第幾天。
+2、t是每30分鐘紀錄一次，所以t=34代表17點。
+3、app紀錄位置，僅紀錄使用者使用app的時間段，並非連續。
+4、[x,y]並非經緯度，定義城市邊界框，從0開始，每個單位500m，範圍：x=0<del>200,y=0</del>200。
+5、day_of_week 星期幾（0=週日, 1=週一, ..., 6=週六）
+6、working_day 是否為工作日（1=是, 0=否）
+
+另外資料離散程度很大，在早上8點到下午6點資料比較多
+
+而我希望每個人能萃取的特徵有:住家點、工作點、通勤距離/時間、通勤路線、特定活動地點（如健身房、商場）、活動熱點數量(生活圈數量)、活動熱點範圍（所有活動熱點的 bounding box 或 radius)、活動 entropy(越分散代表活動範圍不固定)、週期性行為特徵(如禮拜幾最常活動、是否週末出現模式變化)
+
+而最後是依據以上特徵來去進行以下分群並可視化:
+1、那些人是生活圈重疊 
+2、那些人是「固定型通勤族」或是「不固定型」
+3、地圖上的poi點
+
+
+我目前有的features有:
+1、uid
+2、home_x, home_y
+3、work_x, work_y
+4、commute_dist
+5、n_hotspots
+6、'bbox_xmin':, 'bbox_ymin', 'bbox_xmax', 'bbox_ymax'
+7、hotspot_radius
+8、act_entropy
+9、hotspot_centers
+我想依據這些features來去找地圖上的重要poi，另外為避免過於接近的POI，設定最小距離範圍，只保留彼此距離較遠的點。，最後poi要儲存並可視化
+
+我現在有多個x.y位置所代表的經緯度:
+[X,Y] -> [經度, 緯度]
+[135,77] ->[35.171686742452046, 136.8819338645865]
+[129,81] -> [35.136656631816585, 136.9096687302056]
+[135,82] -> [35.17630485304206, 136.91512169532413]
+[139,88] -> [35.18615646726879, 136.9473140549638]
+
+我有辦法讓我這200*200的xy座標圖自動對應到實際地圖上嗎，並輸出實際地圖搭配上我的X,Y座標
+
+擬和完成之後，輸出200*200中每個x,y所代表的經緯度	
+
+我現在有200*200個點，格式為{'x': x, 'y': y, 'lat': lat, 'lon': lon}
+我現在想把這些點實際點在地圖上，並輸出一張地圖含這些點
+
+接者我想在200*200的地圖上，標示出地鐵站、火車站、用以知的各x,y所代表的經緯度去搜尋，最後輸出一張圖顯示。
+標示時地鐵站、火車站分別用不同顏色及符號標示。
+
