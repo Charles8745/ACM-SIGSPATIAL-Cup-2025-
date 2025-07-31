@@ -754,14 +754,14 @@ class ModelZoo:
 """
 if __name__ == "__main__":
     # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day_modify
-    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
-    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
-    raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv', header=0)
+    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv', header=0)
+    raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
     feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
 
     std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
 
-    thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
+    thresholds = [0,9999]
     for i in range(len(thresholds) - 1):
         lower = thresholds[i]
         upper = thresholds[i + 1]
@@ -773,13 +773,16 @@ if __name__ == "__main__":
         std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
             feature_df = feature_df, 
             valid_uid_list = valid_uid_list, 
-            output_name=f'A_std{upper}',
-            early_stop=3000
+            output_name=f'A_y_std{upper}',
+            early_stop=10000
         )
 
         final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-            generated_data_input = f'./Predictions/A_std{upper}_Per_User_Per_t_Mode_working_day_modify.csv',
+            generated_data_input = f'./Predictions/A_y_std{upper}_Per_User_Per_t_Mode_working_day_modify.csv',
             reference_data_input = raw_test_data_df,
+            valid=True,
+            city_name='a',
+            raw_data_path='./Data/city_A_challengedata.csv'
         )
         print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
