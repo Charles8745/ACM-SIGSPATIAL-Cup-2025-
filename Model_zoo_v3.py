@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 import torch
@@ -49,13 +50,12 @@ class data_preprocessing:
         feature_cols = ['x', 'y', 'delta_t']
         # feature_cols = ['t', 'x', 'y', 'day_of_week', 'working_day', 'delta_t']
         assert not merged_df[feature_cols].isnull().any().any(), "資料有 nan"
-        result_df = merged_df[feature_cols].astype(float)
         train_data = train_data[feature_cols].astype(float)
         test_data = test_data[feature_cols].astype(float)
         train_seq = [row for row in train_data.values]
         test_seq = [row for row in test_data.values]
 
-        return result_df, train_seq, test_seq
+        return train_data, test_data, train_seq, test_seq
 
 class SlidingSeqDataset(Dataset):
     def __init__(self, train_seq, batch_size):
@@ -132,7 +132,7 @@ class TLSTMCell(nn.Module):
         return current_hidden, Ct
 
 class TLSTMModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=1):
+    def __init__(self, input_dim, hidden_dim, output_dim):
         super(TLSTMModel, self).__init__()
         self.cell = TLSTMCell(input_dim, hidden_dim)
         self.fc1 = nn.Linear(hidden_dim, 64)
@@ -150,8 +150,8 @@ class TLSTMModel(nn.Module):
         xy = x[:, :, 0:2]
         mask = (xy.abs().sum(dim=2) != 0)  # [batch, seq_len]
         valid_lens = mask.sum(dim=1)  # [batch]，每個 batch 有效長度
-
         max_valid_len = valid_lens.max().item()
+
         for t in range(max_valid_len):
             # 只對有效序列做運算，超過有效長度的 batch 不更新 h, c
             active_mask = (valid_lens > t)
@@ -189,16 +189,20 @@ if __name__ == "__main__":
     train_path = './Training_Testing_Data/A_x_train.csv'
     test_path = './Training_Testing_Data/A_x_test.csv'
     feature_path = './Stability/A_features.csv'
-    target_uid = 3
-    batch_size = 32
+    target_uid = 1
+    batch_size = 64
     num_epochs = 64
     input_dim = 2  # x, y, (delta_t單獨處理)
     hidden_dim = 128
     output_dim = 2  # 只預測 x, y
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")  # 強制使用 CPU
+    best_loss = float('inf')
+    patience = 10
+    counter = 0
+    os.makedirs('./ckpt/TLSTM', exist_ok=True)
 
-    result_df, train_seq, test_seq  = data_preprocessing.load_merge_feature(
+    train_data, test_data, train_seq, test_seq  = data_preprocessing.load_merge_feature(
         train_path, test_path, feature_path, target_uid)
     dataset = SlidingSeqDataset(train_seq, batch_size=batch_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=padding_fn)
@@ -238,3 +242,43 @@ if __name__ == "__main__":
         
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+
+        # Early stopping 檢查
+        if avg_loss < best_loss - 1e-5:  # 1e-5 可調整，避免浮點誤差
+            best_loss = avg_loss
+            counter = 0
+            # 你也可以在這裡順便存下最佳模型
+            torch.save(model.state_dict(), f'./ckpt/TLSTM/{target_uid}_tlstm_model.pth')
+        else:
+            counter += 1
+            if counter >= patience:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
+
+
+    # 測試模型
+    model.load_state_dict(torch.load(f'./ckpt/TLSTM/{target_uid}_tlstm_model.pth', weights_only=True))
+    # 取得 1~60 天資料
+    history_df = train_data.astype(float).values
+    # 取得 61~75 天的 delta_t
+    future_delta_t = test_data['delta_t'].astype(float).values
+    # 預測 61~75 天
+    model.eval()
+    with torch.no_grad():
+        # 先用 1~60天的資料初始化
+        history = torch.tensor(history_df, dtype=torch.float32).unsqueeze(0).to(device)  # [1, seq_len, 3]
+        pred_xy, valid_lens = model(history)
+        # 取最後一個有效 hidden state 的 x, y 作為預測起點
+        last_xy = history[0, -1, :2].cpu().numpy()  # [x, y]
+        # 預測未來 15 天
+        preds = []
+        for delta_t in future_delta_t:
+            # 準備下一步輸入
+            input_step = np.concatenate([last_xy, [delta_t]])  # [x, y, delta_t]
+            input_tensor = torch.tensor(input_step, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, 3]
+            pred_xy, _ = model(input_tensor)
+            last_xy = pred_xy[0, -1, :].cpu().numpy()  # 取預測的 x, y
+            preds.append(last_xy)
+        preds = np.array(preds) * 200  # 還原
+        print("61~75天預測結果(x, y):")
+        print(preds[-10:].astype(int))
