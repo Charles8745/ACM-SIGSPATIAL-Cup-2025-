@@ -4,6 +4,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import time 
+import geobleu
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
@@ -39,16 +42,15 @@ class data_preprocessing:
                 merged_df.at[idx, 'delta_t'] = merged_df.at[idx, 't'] + 48 - merged_df.at[prev_idx, 't']
         merged_df['delta_t'] = merged_df['delta_t'].fillna(1)
         # 正規化
-        merged_df['x'] = merged_df['x']/200.0
-        merged_df['y'] = merged_df['y']/200.0
+        merged_df['x'] = (merged_df['x'] - 100.5) / 99.5
+        merged_df['y'] = (merged_df['y'] - 100.5) / 99.5
         
         # 分出訓練用和測試用的資料
         train_data = merged_df[merged_df['d'] <= 60]
         test_data = merged_df[merged_df['d'] > 60]
 
         # 選擇要得feature列
-        feature_cols = ['x', 'y', 'delta_t']
-        # feature_cols = ['t', 'x', 'y', 'day_of_week', 'working_day', 'delta_t']
+        feature_cols = ['x', 'y', 't', 'day_of_week', 'working_day', 'delta_t']
         assert not merged_df[feature_cols].isnull().any().any(), "資料有 nan"
         train_data = train_data[feature_cols].astype(float)
         test_data = test_data[feature_cols].astype(float)
@@ -135,8 +137,8 @@ class TLSTMModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(TLSTMModel, self).__init__()
         self.cell = TLSTMCell(input_dim, hidden_dim)
-        self.fc1 = nn.Linear(hidden_dim, 64)
-        self.fc2 = nn.Linear(64, output_dim)
+        self.fc1 = nn.Linear(hidden_dim, 128)
+        self.fc2 = nn.Linear(128, output_dim)
 
     def forward(self, x):
         # x: [batch, seq_len, feature_dim]
@@ -176,7 +178,7 @@ class TLSTMModel(nn.Module):
         )  # [batch, max_valid_len, hidden_dim]
 
         out = self.fc1(padded_hiddens)
-        out = torch.sigmoid(self.fc2(F.relu(out)))
+        out = self.fc2(F.relu(out))
         return out, valid_lens
 
 def padding_fn(batch):
@@ -186,14 +188,15 @@ def padding_fn(batch):
     return x_padded, y_padded
 
 if __name__ == "__main__":
+    start_time = time.time()
     train_path = './Training_Testing_Data/A_x_train.csv'
     test_path = './Training_Testing_Data/A_x_test.csv'
     feature_path = './Stability/A_features.csv'
-    target_uid = 1
-    batch_size = 64
-    num_epochs = 64
-    input_dim = 2  # x, y, (delta_t單獨處理)
-    hidden_dim = 128
+    target_uid = 91
+    batch_size = 256
+    num_epochs = 128
+    input_dim = 5  # x, y, 't', 'day_of_week', 'working_day', (delta_t單獨處理)
+    hidden_dim = 256
     output_dim = 2  # 只預測 x, y
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")  # 強制使用 CPU
@@ -201,16 +204,18 @@ if __name__ == "__main__":
     patience = 10
     counter = 0
     os.makedirs('./ckpt/TLSTM', exist_ok=True)
-
     train_data, test_data, train_seq, test_seq  = data_preprocessing.load_merge_feature(
         train_path, test_path, feature_path, target_uid)
+    batch_size = batch_size if batch_size < len(train_data)-1 else len(train_data)-1  # 確保不超過資料長度
     dataset = SlidingSeqDataset(train_seq, batch_size=batch_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=padding_fn)
 
     model = TLSTMModel(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.MSELoss()
+    loss_history = []
 
+    # Train
     for epoch in range(num_epochs):
         model.train()
         total_loss = 0
@@ -229,11 +234,20 @@ if __name__ == "__main__":
                 if valid_len == 0:
                     continue
                 pred = pred_xy[i, :valid_len, :]  # [valid_len, 2]
-                true = batch_y[i, :valid_len, 0:2]  # [valid_len, 2]    
-                loss = criterion(pred, true)
+                true = batch_y[i, :valid_len, 0:2]  # [valid_len, 2]   
+
+                # 計算 weighted loss，分開對 x, y
+                pred_x = pred[:, 0]
+                pred_y = pred[:, 1]
+                true_x = true[:, 0]
+                true_y = true[:, 1]
+
+                loss_x = ((pred_x - true_x) ** 2).mean()
+                loss_y = ((pred_y - true_y) ** 2).mean()
+                loss = 0.6 * loss_x + 0.4 * loss_y  # 可調整權重
+                loss = loss.mean()
                 losses.append(loss)
-                if(i==0):
-                    print(f"Pred vs True (last 5):\n{np.concatenate([pred.detach().cpu().numpy()[-5:] * 200, true.detach().cpu().numpy()[-5:] * 200], axis=1).astype(int)}")
+                    
             if len(losses) > 0:
                 loss = torch.stack(losses).mean()
                 loss.backward()
@@ -241,10 +255,13 @@ if __name__ == "__main__":
                 total_loss += loss.item()
         
         avg_loss = total_loss / len(dataloader)
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+        loss_history.append(avg_loss)  # 加入 loss 紀錄
+        if (epoch+1) % 10 == 0 or epoch == num_epochs - 1:
+            print(f"Pred vs True (last 5):\n{np.concatenate([pred.detach().cpu().numpy()[-5:] * 99.5 + 100.5, true.detach().cpu().numpy()[-5:] * 99.5 + 100.5], axis=1).astype(int)}")
+            print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
 
         # Early stopping 檢查
-        if avg_loss < best_loss - 1e-5:  # 1e-5 可調整，避免浮點誤差
+        if avg_loss < best_loss - 1e-5:  # 1e-4 可調整，避免浮點誤差
             best_loss = avg_loss
             counter = 0
             # 你也可以在這裡順便存下最佳模型
@@ -254,14 +271,29 @@ if __name__ == "__main__":
             if counter >= patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break
+    elapsed_time = time.time() - start_time
+    print(f"Training completed in {elapsed_time//60:.2f} minutes.")
+
+    # 訓練結束後畫 loss 曲線
+    plt.figure()
+    plt.plot(loss_history, marker='o')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Curve')
+    plt.grid()
+    plt.show()
 
 
     # 測試模型
     model.load_state_dict(torch.load(f'./ckpt/TLSTM/{target_uid}_tlstm_model.pth', weights_only=True))
     # 取得 1~60 天資料
     history_df = train_data.astype(float).values
-    # 取得 61~75 天的 delta_t
+    # 取得 61~75 天的 t, day_of_week, working_day, delta_t
+    future_t = test_data['t'].astype(float).values
+    future_day_of_week = test_data['day_of_week'].astype(float).values
+    future_working_day = test_data['working_day'].astype(float).values
     future_delta_t = test_data['delta_t'].astype(float).values
+    future_true_xy = test_data[['x', 'y']].values * 99.5 + 100.5  # 還原
     # 預測 61~75 天
     model.eval()
     with torch.no_grad():
@@ -272,13 +304,59 @@ if __name__ == "__main__":
         last_xy = history[0, -1, :2].cpu().numpy()  # [x, y]
         # 預測未來 15 天
         preds = []
-        for delta_t in future_delta_t:
-            # 準備下一步輸入
-            input_step = np.concatenate([last_xy, [delta_t]])  # [x, y, delta_t]
-            input_tensor = torch.tensor(input_step, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, 3]
+        for i in range(len(future_delta_t)):
+            input_step = np.concatenate([
+                last_xy, 
+                [future_t[i], future_day_of_week[i], future_working_day[i], future_delta_t[i]]
+            ])  # [x, y, t, day_of_week, working_day, delta_t]
+            input_tensor = torch.tensor(input_step, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
             pred_xy, _ = model(input_tensor)
-            last_xy = pred_xy[0, -1, :].cpu().numpy()  # 取預測的 x, y
+            last_xy = pred_xy[0, -1, :].cpu().numpy()
             preds.append(last_xy)
-        preds = np.array(preds) * 200  # 還原
-        print("61~75天預測結果(x, y):")
-        print(preds[-10:].astype(int))
+        
+        # 輸出預測與真實
+        preds = np.array(preds) * 99.5 + 100.5
+        print("61~75天預測 vs 真實 (x, y):")
+        out = np.concatenate([preds.astype(int), future_true_xy.astype(int)], axis=1)
+        print("pred_x, pred_y, true_x, true_y")
+        print(out[-20:])  # 只顯示最後20點的預測結果
+
+    # 包裝成輸出
+    raw_test_df = pd.read_csv(test_path)
+    uid_test_df = raw_test_df[raw_test_df['uid'] == target_uid]
+    uid_test_df['x'] = preds[:, 0]
+    uid_test_df['y'] = preds[:, 1]
+    output_df = uid_test_df[['uid', 'd', 't', 'x', 'y']]
+    output_df = pd.DataFrame(output_df, columns=['uid', 'd', 't', 'x', 'y']).astype(int)
+
+    # 輸出成 csv
+    os.makedirs('./Predictions/TLSTM', exist_ok=True)
+    output_df.to_csv(f'./Predictions/TLSTM/{target_uid}.csv', index=False)
+    print(f"已輸出預測結果到 ./Predictions/TLSTM/{target_uid}.csv")
+
+    # LSTM成績計算
+    GEOBLEU_scores = []
+    DTW_scores = []
+    generated_df = pd.read_csv(f'./Predictions/TLSTM/{target_uid}.csv')
+    reference_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+
+    gen_user = generated_df[generated_df['uid'] == target_uid]
+    ref_user = reference_df[reference_df['uid'] == target_uid]
+
+    gen_traj = gen_user[['d', 't', 'x', 'y']].to_records(index=False)
+    ref_traj = ref_user[['d', 't', 'x', 'y']].to_records(index=False)
+    gen_traj = [tuple(row) for row in gen_traj]
+    ref_traj = [tuple(row) for row in ref_traj]
+
+    # GEOBLEU_score
+    GEOBLEU_score = geobleu.calc_geobleu_single(gen_traj, ref_traj)
+    GEOBLEU_scores.append(GEOBLEU_score)
+
+    # dtw
+    DTW_score = geobleu.calc_dtw_single(gen_traj, ref_traj)
+    DTW_scores.append(DTW_score)
+
+    final_GEOBLEU_score = sum(GEOBLEU_scores) / len(GEOBLEU_scores) if GEOBLEU_scores else 0.0
+    final_DTW_score = sum(DTW_scores) / len(DTW_scores) if DTW_scores else 0.0
+    print(f'\nLSTM---GEOBLEU平均分數: {final_GEOBLEU_score:.4f}, DTW平均分數: {final_DTW_score:.4f}')
+
