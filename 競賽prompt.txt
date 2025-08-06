@@ -1,3 +1,42 @@
+現在資料格式為['t', 'x', 'y', 'day_of_week', 'working_day', 'delta_t']
+我可以如何利用cvae學到的latent space來協助我生成61到75天可能的移動軌跡
+有個問題每個人的每一天有被記錄的時間點不一，可能這一天有10個點，明天只有4個點,我希望能透過cvae學習該群每個人的淺在分佈,我事實上共有150000人資料，其中只有後3000人沒有61~75天資料，能不能生成的時候z_sample使用這147000人的latent_space分佈搭配上後3000人的uid生成
+
+
+
+
+
+我想知道此人的去公司上班的時間區間，可以從home_loc\work_loc判斷
+
+現在資料格式為['t', 'x', 'y', 'day_of_week', 'working_day', 'delta_t']的序列，我之後要丟入TLSTM訓練，Dataset and DAtaloader如何建立
+
+以下是用你現有的 TLSTMCell（PyTorch）進行完整訓練與預測的標準流程，適合你的資料格式與模型：
+數據前處理
+讀取 csv，按 uid 分組，排序，計算 delta_t，組成序列資料。
+將 x, y, day_of_week, working_day 作為 features，delta_t 為時間間隔。
+建立 Dataset 與 DataLoader
+將每個 uid 的序列包裝成 PyTorch Dataset，方便 batch 訓練。
+定義 TLSTMCell 包裝的 RNN 模型
+可用 nn.Module 實作多步序列 forward。
+訓練迴圈
+標準 optimizer、loss 計算、反向傳播。
+預測流程
+用訓練好的模型對新序列做 forward，取得預測結果。
+
+我想用Time Aware LSTM方法使用pytorch建模
+我目前除了原始資料格式:
+uid:使用者 ID,d:第幾天（1<del>60,t:每日的 30 分鐘時間片（0</del>47）,[x, y] 使用者所在的城市座（200x200 格網）, day_of_week:星期幾（0=週日, 1=週一, ..., 6=週六）, working_day 是否為工作日（1=是, 0=否）
+我還有做特徵工程得到每個uid的:
+2、home_x, home_y
+3、work_x, work_y
+4、commute_dist
+5、n_hotspots
+6、'bbox_xmin':, 'bbox_ymin', 'bbox_xmax', 'bbox_ymax'
+7、hotspot_radius
+8、act_entropy
+9、hotspot_centers
+我想預測這3000人61到75天的資料，test.csv會給uid,d,t,x,y,day_of_week,working_day而x,y都是999，而最後預測輸出格式為['uid', 'd', 't', 'x', 'y']
+
 接者我想用LightGBM建模
 我目前除了原始資料格式:
 uid:使用者 ID,d:第幾天（1<del>60,t:每日的 30 分鐘時間片（0</del>47）,[x, y] 使用者所在的城市座（200x200 格網）, day_of_week:星期幾（0=週日, 1=週一, ..., 6=週六）, working_day 是否為工作日（1=是, 0=否）
