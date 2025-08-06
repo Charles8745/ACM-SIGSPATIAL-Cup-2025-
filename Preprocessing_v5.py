@@ -1197,7 +1197,7 @@ if __name__ == "__main__":
     #                      valid_uid_list=None)
  
     # 畫軌跡
-    uid = 35
+    uid = 41
     user_df = raw_train_df[(raw_train_df['uid'] == uid) & (raw_train_df['d'] >30)] 
     features_df = pd.read_csv('./Stability/A_features.csv')
     commute_str = features_df[features_df['uid'] == uid]['commute_paths'].values[0]
