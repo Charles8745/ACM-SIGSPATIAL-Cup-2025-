@@ -98,16 +98,26 @@ class CVAE(nn.Module):
         return x_hat, mu, logvar
 
 def cvae_loss(x_hat, x, mu, logvar, mask, beta=0.05):
-    # x_hat, x: (batch, max_len, input_dim)
+    # x_hat, x: (batch, max_len, 2)
     # mask: (batch, max_len)
-    # 重建 loss，只計算有效點
-    recon_loss = ((x_hat - x[..., :2]) ** 2).sum(dim=-1)  # 僅考慮 x, y
-    recon_loss = (recon_loss * mask).sum() / mask.sum()
-
-    # KL loss
-    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)  # (batch,)
+    # step 1: 只考慮 x, y
+    xy = x[..., :2]  # (batch, max_len, 2)
+    # step 2: 計算每個 batch, seq 位置的 (x, y) 在該序列中出現幾次
+    # 這裡以 batch 維度分開計算
+    weights = []
+    for seq in xy.cpu().numpy():
+        # seq: (max_len, 2)
+        # 轉成 tuple 方便比對
+        seq_tuples = [tuple(p) for p in seq]
+        counts = np.array([seq_tuples.count(p) for p in seq_tuples])
+        weights.append(counts)
+    weights = torch.tensor(weights, dtype=torch.float32, device=x.device)  # (batch, max_len)
+    # step 3: 計算加權重構 loss
+    recon_loss = ((x_hat - xy) ** 2).sum(dim=-1)  # (batch, max_len)
+    recon_loss = (recon_loss * weights * mask).sum() / (weights * mask).sum()
+    # step 4: KL loss
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)
     kl_loss = kl_loss.mean()
-
     return recon_loss + beta * kl_loss, recon_loss, kl_loss
 
 def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
@@ -172,7 +182,7 @@ if __name__ == "__main__":
 
     # 訓練迴圈 + EarlyStopping
     epochs = 50000
-    patience = 100  # 多少 epoch 沒改善就停止
+    patience = 250  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
