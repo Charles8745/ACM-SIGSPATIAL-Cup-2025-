@@ -919,19 +919,19 @@ if __name__ == "__main__":
 
     valid_uid_list = cluster_df[(cluster_df['cluster'] == 1) & (cluster_df['uid'] <= 147000)]['uid'].unique()
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
-    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
-    # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
-    #         feature_df = feature_df, 
-    #         valid_uid_list = valid_uid_list, 
-    #         output_name=f'A_x_cluster1_modify',
-    #         early_stop=3000
-    #     )
+    std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+    std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
+            feature_df = feature_df, 
+            valid_uid_list = valid_uid_list, 
+            output_name=f'A_x_cluster1_modify',
+            early_stop=3000
+        )
 
-    # final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-    #     generated_data_input = f'./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv',
-    #     reference_data_input = raw_test_data_df,
-    # )
-    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+        generated_data_input = f'./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv',
+        reference_data_input = raw_test_data_df,
+    )
+    print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # 可視化比較
     target_uid = valid_uid_list[0]

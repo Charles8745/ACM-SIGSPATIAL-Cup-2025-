@@ -162,12 +162,12 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 32
+    latent_dim = 64 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 128
-    hidden_dim = 128
+    hidden_dim = 256
     batch_size = 1024
-    max_len = 500
+    max_len = 550
     num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
