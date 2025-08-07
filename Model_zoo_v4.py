@@ -19,7 +19,7 @@ class TrajectoryDataset(Dataset):
         self.masks = []
         for uid in uid_list:
             user_df = df[df['uid'] == uid]
-            traj = user_df[['x', 'y', 't', 'working_day', 'delta_t']].values
+            traj = user_df[['x', 'y', 't']].values
             length = len(traj)
             self.lengths.append(length)
             # padding
@@ -137,16 +137,17 @@ if __name__ == "__main__":
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
     valid_uid_list = raw_cluster_df[raw_cluster_df['cluster'] == 1]['uid'].unique().tolist()
     valid_uid_list = valid_uid_list
+    print(f"有效的使用者數量: {len(valid_uid_list)}")
 
 
     # 模型初始化
-    input_dim = 5
-    latent_dim = 128
+    input_dim = 3
+    latent_dim = 32
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 64
-    hidden_dim = 256
-    max_len = 300
-    num_layers = 2
+    uid_embed_dim = 32
+    hidden_dim =64
+    max_len = 400
+    num_layers = 3
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
