@@ -97,7 +97,7 @@ class CVAE(nn.Module):
         x_hat = self.decode(z, uid, t)
         return x_hat, mu, logvar
 
-def cvae_loss(x_hat, x, mu, logvar, mask):
+def cvae_loss(x_hat, x, mu, logvar, mask, beta=0.05):
     # x_hat, x: (batch, max_len, input_dim)
     # mask: (batch, max_len)
     # 重建 loss，只計算有效點
@@ -108,7 +108,7 @@ def cvae_loss(x_hat, x, mu, logvar, mask):
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)  # (batch,)
     kl_loss = kl_loss.mean()
 
-    return recon_loss + kl_loss, recon_loss, kl_loss
+    return recon_loss + beta * kl_loss, recon_loss, kl_loss
 
 def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
     # user_train_df: 該使用者的 1~60 天資料
@@ -160,9 +160,9 @@ if __name__ == "__main__":
     latent_dim = 32
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 128
-    hidden_dim = 64
-    batch_size = 128
-    max_len = 250
+    hidden_dim = 128
+    batch_size = 512
+    max_len = 500
     num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -170,68 +170,68 @@ if __name__ == "__main__":
     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    # # 訓練迴圈 + EarlyStopping
-    # epochs = 50000
-    # patience = 500  # 多少 epoch 沒改善就停止
-    # best_loss = float('inf')
-    # wait = 0
-    # loss_list = []
-    # recon_list = []
-    # kl_list = []
-    # for epoch in range(epochs):
-    #     model.train()
-    #     total_loss = 0
-    #     total_recon = 0
-    #     total_kl = 0
-    #     for x, mask, lengths, uid, t in dataloader:
-    #         x = x.to(device)
-    #         mask = mask.to(device)
-    #         t = t.to(device)
-    #         uid = torch.tensor(uid, dtype=torch.long).to(device)
-    #         optimizer.zero_grad()
-    #         x_hat, mu, logvar = model(x, uid, t, mask)
-    #         loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask)
-    #         loss.backward()
-    #         optimizer.step()
-    #         total_loss += loss.item()
-    #         total_recon += recon_loss.item()
-    #         total_kl += kl_loss.item()
-    #     avg_loss = total_loss / len(dataloader)
-    #     avg_recon = total_recon / len(dataloader)
-    #     avg_kl = total_kl / len(dataloader)
-    #     loss_list.append(avg_loss)
-    #     recon_list.append(avg_recon)
-    #     kl_list.append(avg_kl)
-    #     print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
+    # 訓練迴圈 + EarlyStopping
+    epochs = 50000
+    patience = 100  # 多少 epoch 沒改善就停止
+    best_loss = float('inf')
+    wait = 0
+    loss_list = []
+    recon_list = []
+    kl_list = []
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        total_recon = 0
+        total_kl = 0
+        for x, mask, lengths, uid, t in dataloader:
+            x = x.to(device)
+            mask = mask.to(device)
+            t = t.to(device)
+            uid = torch.tensor(uid, dtype=torch.long).to(device)
+            optimizer.zero_grad()
+            x_hat, mu, logvar = model(x, uid, t, mask)
+            loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, beta=1)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            total_recon += recon_loss.item()
+            total_kl += kl_loss.item()
+        avg_loss = total_loss / len(dataloader)
+        avg_recon = total_recon / len(dataloader)
+        avg_kl = total_kl / len(dataloader)
+        loss_list.append(avg_loss)
+        recon_list.append(avg_recon)
+        kl_list.append(avg_kl)
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
 
-    #     # EarlyStopping 機制
-    #     if avg_loss < best_loss:
-    #         best_loss = avg_loss
-    #         wait = 0
-    #         torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
-    #     else:
-    #         wait += 1
-    #         if wait >= patience:
-    #             print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
-    #             break
+        # EarlyStopping 機制
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            wait = 0
+            torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
+        else:
+            wait += 1
+            if wait >= patience:
+                print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+                break
 
 
-    # # 儲存模型
-    # os.makedirs('./ckpt/CVAE', exist_ok=True)
-    # torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
-    # print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
+    # 儲存模型
+    os.makedirs('./ckpt/CVAE', exist_ok=True)
+    torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
+    print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
 
-    # # 顯示 loss 趨勢圖
-    # plt.figure(figsize=(8, 6))
-    # plt.plot(loss_list, label='Total Loss')
-    # plt.plot(recon_list, label='Reconstruction Loss')
-    # plt.plot(kl_list, label='KL Loss')
-    # plt.xlabel('Epoch')
-    # plt.ylabel('Loss')
-    # plt.title('CVAE Loss Trend')
-    # plt.legend()
-    # plt.grid()
-    # plt.show()
+    # 顯示 loss 趨勢圖
+    plt.figure(figsize=(8, 6))
+    plt.plot(loss_list, label='Total Loss')
+    plt.plot(recon_list, label='Reconstruction Loss')
+    plt.plot(kl_list, label='KL Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('CVAE Loss Trend')
+    plt.legend()
+    plt.grid()
+    plt.show()
 
     # 載入最佳模型權重
     model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_best.pth", map_location=device))

@@ -911,13 +911,53 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
-    # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day_dynamic
+    # 檢查同一個cluster分數-->Per_User_Per_t_Mode_working_day_modify
     raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
     raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
-    raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv', header=0)
     feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
+    cluster_df = pd.read_csv('./Stability/A_activity_space.csv', header=0)
 
-    std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+    valid_uid_list = cluster_df[(cluster_df['cluster'] == 1) & (cluster_df['uid'] <= 147000)]['uid'].unique()
+    print(f'有效的使用者ID數量: {len(valid_uid_list)}')
+    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+    # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
+    #         feature_df = feature_df, 
+    #         valid_uid_list = valid_uid_list, 
+    #         output_name=f'A_x_cluster1_modify',
+    #         early_stop=3000
+    #     )
+
+    # final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+    #     generated_data_input = f'./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv',
+    #     reference_data_input = raw_test_data_df,
+    # )
+    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+
+    # 可視化比較
+    target_uid = valid_uid_list[0]
+    gen_df = pd.read_csv(f'./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv', header=0)
+    user_test_df = raw_test_data_df[raw_test_data_df['uid'] == target_uid]
+    future_traj = gen_df[gen_df['uid'] == target_uid][['x', 'y']].values  
+    true_traj = user_test_df[['x', 'y']].values  # 真實第61~75天
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(true_traj[:, 0], true_traj[:, 1], label='True', color='blue', marker='o', alpha=0.5, s=3)
+    plt.scatter(future_traj[:, 0], future_traj[:, 1], label='Generated', color='red', marker='x', alpha=0.5, s=3)
+    plt.title(f'UID {target_uid} 第61~75天軌跡比較')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+
+    # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day_dynamic
+    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
+    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
+    # raw_std_df = pd.read_csv('./Stability/A_xtrain_working_day_stability.csv', header=0)
+    # feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
+
+    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
     # target_uid = 24
 
     # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
@@ -953,30 +993,30 @@ if __name__ == "__main__":
     # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # thresholds = [0, 1, 2, 3, 4, 5, 10, 9999]
-    thresholds = [0, 9999]
-    for i in range(len(thresholds) - 1):
-        lower = thresholds[i]
-        upper = thresholds[i + 1]
+    # thresholds = [0, 9999]
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
 
-        filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
-        valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
-        print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
 
-        std_model_zoo.Per_User_Per_t_Mode_working_day_dynamic(
-            feature_df = feature_df, 
-            valid_uid_list = valid_uid_list, 
-            output_name=f'A_x_std{upper}',
-            early_stop=10000
-        )
+    #     std_model_zoo.Per_User_Per_t_Mode_working_day_dynamic(
+    #         feature_df = feature_df, 
+    #         valid_uid_list = valid_uid_list, 
+    #         output_name=f'A_x_std{upper}',
+    #         early_stop=10000
+    #     )
 
-        final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-            generated_data_input = f'./Predictions/A_x_std{upper}_Per_User_Per_t_Mode_working_day_dynamic.csv',
-            reference_data_input = raw_test_data_df,
-            valid=False,
-            city_name='a',
-            raw_data_path='./Data/city_A_challengedata.csv'
-        )
-        print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    #     final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+    #         generated_data_input = f'./Predictions/A_x_std{upper}_Per_User_Per_t_Mode_working_day_dynamic.csv',
+    #         reference_data_input = raw_test_data_df,
+    #         valid=False,
+    #         city_name='a',
+    #         raw_data_path='./Data/city_A_challengedata.csv'
+    #     )
+    #     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     
     """
