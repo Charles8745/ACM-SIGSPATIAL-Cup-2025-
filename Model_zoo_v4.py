@@ -12,7 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
 class TrajectoryDataset(Dataset):
-    def __init__(self, df, uid_list, max_len=400, x_mean=0, y_mean=0, x_std=1, y_std=1):
+    def __init__(self, df, uid_list, max_len=400):
         self.uid_list = uid_list
         self.max_len = max_len
         self.data = []
@@ -21,11 +21,9 @@ class TrajectoryDataset(Dataset):
         for uid in uid_list:
             user_df = df[df['uid'] == uid]
             traj = user_df[['x', 'y', 't']].values
-            # 標準化 x, y
-            traj[:, 0] = (traj[:, 0] - x_mean) / x_std
-            traj[:, 1] = (traj[:, 1] - y_mean) / y_std
             length = len(traj)
             self.lengths.append(length)
+            # padding
             if length < max_len:
                 pad = np.zeros((max_len - length, traj.shape[1]))
                 traj = np.vstack([traj, pad])
@@ -156,11 +154,6 @@ if __name__ == "__main__":
     valid_uid_list = valid_uid_list
     print(f"有效的使用者數量: {len(valid_uid_list)}")
 
-    # 對 x, y 做標準化
-    valid_train_df = raw_train_df[raw_train_df['uid'].isin(valid_uid_list)]
-    xy = valid_train_df[['x', 'y']].values
-    x_mean, y_mean = xy.mean(axis=0)
-    x_std, y_std = xy.std(axis=0)
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
@@ -171,7 +164,7 @@ if __name__ == "__main__":
     batch_size = 512
     max_len = 500
     num_layers = 1
-    dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len, x_mean=x_mean, y_mean=y_mean, x_std=x_std, y_std=y_std)
+    dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers).to(device)
@@ -254,9 +247,6 @@ if __name__ == "__main__":
                                              user_test_df,
                                              target_uid, 
                                              device)
-    # 反標準化
-    future_traj[:, 0] = future_traj[:, 0] * x_std + x_mean
-    future_traj[:, 1] = future_traj[:, 1] * y_std + y_mean
     print("生成第61~75天軌跡（x, y）：")
     for i, row in enumerate(future_traj):
         t = int(user_test_df.iloc[i]['t'])
@@ -290,9 +280,6 @@ if __name__ == "__main__":
         if len(user_test_df) == 0:
             continue
         future_traj = generate_future_trajectory(model, user_train_df, user_test_df, uid, device)
-        # 反標準化
-        future_traj[:, 0] = future_traj[:, 0] * x_std + x_mean
-        future_traj[:, 1] = future_traj[:, 1] * y_std + y_mean       
         # future_traj shape: (gen_len, 2)
         for i, row in enumerate(future_traj):
             d = int(user_test_df.iloc[i]['d'])
