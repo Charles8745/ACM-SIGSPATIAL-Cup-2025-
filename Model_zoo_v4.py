@@ -18,6 +18,7 @@ class TrajectoryDataset(Dataset):
         self.data = []
         self.lengths = []
         self.masks = []
+        self.weights = []  # 新增：儲存每個序列的權重
         for uid in uid_list:
             user_df = df[df['uid'] == uid]
             traj = user_df[['x', 'y', 't']].values
@@ -33,8 +34,16 @@ class TrajectoryDataset(Dataset):
                 mask = np.ones(max_len)
             self.data.append(torch.tensor(traj, dtype=torch.float32))
             self.masks.append(torch.tensor(mask, dtype=torch.float32))
+            # 計算 log 級別權重
+            xy = traj[:, :2]
+            pts = [f"{p[0]}_{p[1]}" for p in xy]
+            unique, counts = np.unique(pts, return_counts=True)
+            count_dict = dict(zip(unique, counts))
+            log_weights = np.log2([count_dict[p] + 1 for p in pts])
+            self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
         self.data = torch.stack(self.data)
         self.masks = torch.stack(self.masks)
+        self.weights = torch.stack(self.weights)  # (num, max_len)
 
     def __len__(self):
         return len(self.uid_list)
@@ -45,7 +54,8 @@ class TrajectoryDataset(Dataset):
         length = self.lengths[idx]
         uid = self.uid_list[idx]
         t_seq = traj[:, 2].long()       # 假設 t 在第3欄
-        return traj, mask, length, uid, t_seq
+        weights = self.weights[idx]     # (max_len,)
+        return traj, mask, length, uid, t_seq, weights
 
 class CVAE(nn.Module):
     def __init__(self, input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers=1):
@@ -97,25 +107,10 @@ class CVAE(nn.Module):
         x_hat = self.decode(z, uid, t)
         return x_hat, mu, logvar
 
-def cvae_loss(x_hat, x, mu, logvar, mask, beta=0.05):
-    # x_hat, x: (batch, max_len, 2)
-    # mask: (batch, max_len)
-    # step 1: 只考慮 x, y
-    xy = x[..., :2]  # (batch, max_len, 2)
-    # step 2: 計算每個 batch, seq 位置的 (x, y) 在該序列中出現幾次
-    # 這裡以 batch 維度分開計算
-    weights = []
-    for seq in xy.cpu().numpy():
-        # seq: (max_len, 2)
-        # 轉成 tuple 方便比對
-        seq_tuples = [tuple(p) for p in seq]
-        counts = np.array([seq_tuples.count(p) for p in seq_tuples])
-        weights.append(counts)
-    weights = torch.tensor(weights, dtype=torch.float32, device=x.device)  # (batch, max_len)
-    # step 3: 計算加權重構 loss
-    recon_loss = ((x_hat - xy) ** 2).sum(dim=-1)  # (batch, max_len)
+def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
+    xy = x[..., :2]
+    recon_loss = ((x_hat - xy) ** 2).sum(dim=-1)
     recon_loss = (recon_loss * weights * mask).sum() / (weights * mask).sum()
-    # step 4: KL loss
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)
     kl_loss = kl_loss.mean()
     return recon_loss + beta * kl_loss, recon_loss, kl_loss
@@ -171,7 +166,7 @@ if __name__ == "__main__":
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 128
     hidden_dim = 128
-    batch_size = 512
+    batch_size = 1024
     max_len = 500
     num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
@@ -182,7 +177,7 @@ if __name__ == "__main__":
 
     # 訓練迴圈 + EarlyStopping
     epochs = 50000
-    patience = 250  # 多少 epoch 沒改善就停止
+    patience = 1000  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
@@ -193,14 +188,15 @@ if __name__ == "__main__":
         total_loss = 0
         total_recon = 0
         total_kl = 0
-        for x, mask, lengths, uid, t in dataloader:
+        for x, mask, lengths, uid, t, weights in dataloader:
             x = x.to(device)
             mask = mask.to(device)
             t = t.to(device)
             uid = torch.tensor(uid, dtype=torch.long).to(device)
+            weights = weights.to(device)
             optimizer.zero_grad()
             x_hat, mu, logvar = model(x, uid, t, mask)
-            loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, beta=1)
+            loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=1)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
