@@ -8,8 +8,12 @@ import time
 import geobleu
 import validator_InModify as validator
 import matplotlib.pyplot as plt
+import matplotlib
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
+matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
+
 
 class TrajectoryDataset(Dataset):
     def __init__(self, df, uid_list, max_len=400):
@@ -21,7 +25,7 @@ class TrajectoryDataset(Dataset):
         self.weights = []  # 新增：儲存每個序列的權重
         for uid in uid_list:
             user_df = df[df['uid'] == uid]
-            traj = user_df[['x', 'y', 't']].values
+            traj = user_df[['x', 'y', 't', 'working_day']].values
             length = len(traj)
             self.lengths.append(length)
             # padding
@@ -53,9 +57,10 @@ class TrajectoryDataset(Dataset):
         mask = self.masks[idx]          # (max_len,)
         length = self.lengths[idx]
         uid = self.uid_list[idx]
-        t_seq = traj[:, 2].long()       # 假設 t 在第3欄
+        t_seq = traj[:, 2].long()       # t
+        working_day_seq = traj[:, 3].long()  # 假設 working_day 在第4欄
         weights = self.weights[idx]     # (max_len,)
-        return traj, mask, length, uid, t_seq, weights
+        return traj, mask, length, uid, t_seq, working_day_seq, weights
 
 class CVAE(nn.Module):
     def __init__(self, input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers=1):
@@ -63,21 +68,23 @@ class CVAE(nn.Module):
         # conditional embedding
         self.uid_embedding = nn.Embedding(uid_dim, uid_embed_dim)
         self.t_embedding = nn.Embedding(49, 24) # 假設 t 的範圍是 0~48 壓到24維
+        self.working_day_embedding = nn.Embedding(2, 2)  # 2種，嵌入4維，可調
 
-        self.encoder_rnn = nn.LSTM(input_dim + uid_embed_dim +24, hidden_dim, batch_first=True, num_layers=num_layers)
+        self.encoder_rnn = nn.LSTM(input_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers)
         self.encoder_fc = nn.Linear(hidden_dim, latent_dim * 2)
-        self.decoder_rnn = nn.LSTM(latent_dim + uid_embed_dim + 24, hidden_dim, batch_first=True, num_layers=num_layers)
+        self.decoder_rnn = nn.LSTM(latent_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers)
         self.decoder_fc = nn.Linear(hidden_dim, input_dim)
         self.max_len = max_len
 
-    def encode(self, x, uid, t, mask):
+    def encode(self, x, uid, t, working_day, mask):
         # x: (batch, max_len, input_dim)  # 包含 t
         # t: (batch, max_len)
         uid_embed = self.uid_embedding(uid)  # (batch, uid_embed_dim)
         t_embed = self.t_embedding(t)        # (batch, max_len, t_embed_dim)
+        wd_embed = self.working_day_embedding(working_day)  # (batch, max_len, wd_embed_dim)
         uid_embed_expand = uid_embed.unsqueeze(1).expand(-1, x.size(1), -1)
-        x_wo_t = x[..., :2]  # 只取 x, y
-        x_cat = torch.cat([x_wo_t, uid_embed_expand, t_embed], dim=-1)
+        x_wo_t = x[..., :2]
+        x_cat = torch.cat([x_wo_t, uid_embed_expand, t_embed, wd_embed], dim=-1)
         lengths = mask.sum(dim=1).long().cpu()
         packed = torch.nn.utils.rnn.pack_padded_sequence(x_cat, lengths, batch_first=True, enforce_sorted=False)
         _, (h_n, _) = self.encoder_rnn(packed)
@@ -91,20 +98,21 @@ class CVAE(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decode(self, z, uid, t):
+    def decode(self, z, uid, t, working_day):
         uid_embed = self.uid_embedding(uid)
         t_embed = self.t_embedding(t)
+        wd_embed = self.working_day_embedding(working_day)
         uid_embed_expand = uid_embed.unsqueeze(1).expand(-1, t.size(1), -1)
         z_expand = z.unsqueeze(1).expand(-1, t.size(1), -1)
-        z_cat_seq = torch.cat([z_expand, uid_embed_expand, t_embed], dim=-1)
+        z_cat_seq = torch.cat([z_expand, uid_embed_expand, t_embed, wd_embed], dim=-1)
         out, _ = self.decoder_rnn(z_cat_seq)
         out = self.decoder_fc(out)  # (batch, max_len, 2)
         return out
-
-    def forward(self, x, uid, t, mask):
-        mu, logvar = self.encode(x, uid, t, mask)
+    
+    def forward(self, x, uid, t, working_day, mask):
+        mu, logvar = self.encode(x, uid, t, working_day, mask)
         z = self.reparameterize(mu, logvar)
-        x_hat = self.decode(z, uid, t)
+        x_hat = self.decode(z, uid, t, working_day)
         return x_hat, mu, logvar
 
 def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
@@ -116,14 +124,9 @@ def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
     return recon_loss + beta * kl_loss, recon_loss, kl_loss
 
 def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
-    # user_train_df: 該使用者的 1~60 天資料
-    # user_test_df:  該使用者的 61~75 天資料
-    # uid: 該使用者的 uid
-    # device: cuda/cpu
     model.eval()
     with torch.no_grad():
-        # 準備訓練資料
-        traj = user_train_df[['x', 'y', 't']].values
+        traj = user_train_df[['x', 'y', 't', 'working_day']].values
         length = len(traj)
         max_len = model.max_len
         if length < max_len:
@@ -136,19 +139,116 @@ def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
         x = torch.tensor(traj, dtype=torch.float32).unsqueeze(0).to(device)
         mask = torch.tensor(mask, dtype=torch.float32).unsqueeze(0).to(device)
         uid_tensor = torch.tensor([uid], dtype=torch.long).to(device)
-        t_seq_train = torch.tensor(traj[:, 2], dtype=torch.long).unsqueeze(0).to(device)  # (1, max_len)
+        t_seq_train = torch.tensor(traj[:, 2], dtype=torch.long).unsqueeze(0).to(device)
+        wd_seq_train = torch.tensor(traj[:, 3], dtype=torch.long).unsqueeze(0).to(device)
 
         # 編碼得到 z
-        mu, logvar = model.encode(x, uid_tensor, t_seq_train, mask)
+        mu, logvar = model.encode(x, uid_tensor, t_seq_train, wd_seq_train, mask)
         z = model.reparameterize(mu, logvar)
 
-        # 生成未來軌跡，這裡用 test 的 t 作為條件
+        # 生成未來軌跡
         gen_len = user_test_df.shape[0]
-        t_seq_gen = torch.tensor(user_test_df['t'].values, dtype=torch.long).unsqueeze(0).to(device)  # (1, gen_len)
-        future_traj = model.decode(z, uid_tensor, t_seq_gen)  # (1, gen_len, input_dim)
+        t_seq_gen = torch.tensor(user_test_df['t'].values, dtype=torch.long).unsqueeze(0).to(device)
+        wd_seq_gen = torch.tensor(user_test_df['working_day'].values, dtype=torch.long).unsqueeze(0).to(device)
+        future_traj = model.decode(z, uid_tensor, t_seq_gen, wd_seq_gen)
         return future_traj.squeeze(0).cpu().numpy()
 
 if __name__ == "__main__":
+    # # mode vs. CVAE 輸出scatter比較
+    # mode_pred_df = pd.read_csv('./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    # cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
+    # gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    # valid_uid_list = mode_pred_df['uid'].unique().tolist()
+    # valid_uid_list =valid_uid_list[:5]
+    # fig, axes = plt.subplots(3, len(valid_uid_list), figsize=(20,12))
+    # for i, uid in enumerate(valid_uid_list):
+    #     axes[0, i].scatter(mode_pred_df[mode_pred_df['uid'] == uid]['x'],
+    #                     mode_pred_df[mode_pred_df['uid'] == uid]['y'],
+    #                     label='Mode', alpha=0.8, s=10, color='red', marker='x')
+    #     axes[0, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+    #             gt_df[gt_df['uid'] == uid]['y'],
+    #             label='gt', alpha=0.1, s=3, color='green')
+    #     axes[0, i].set_title(f'UID {uid} Mode')
+    #     axes[0, i].set_xlabel('x')
+    #     axes[0, i].set_ylabel('y')
+    #     axes[0, i].set_aspect('equal')
+    #     axes[0, i].set_xlim(1, 100)
+    #     axes[0, i].set_ylim(1, 100)
+    #     axes[0, i].grid(True)
+    #     axes[0, i].invert_yaxis()
+    #     axes[0, i].legend()
+
+    #     axes[1, i].scatter(cvae_pred_df[cvae_pred_df['uid'] == uid]['x'],
+    #                     cvae_pred_df[cvae_pred_df['uid'] == uid]['y'],
+    #                     label='Mode', alpha=0.8, s=10, color='red', marker='x')
+    #     axes[1, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+    #             gt_df[gt_df['uid'] == uid]['y'],
+    #             label='gt', alpha=0.1, s=3, color='green')
+    #     axes[1, i].set_title(f'UID {uid} CVAE')
+    #     axes[1, i].set_xlabel('x')  
+    #     axes[1, i].set_ylabel('y')
+    #     axes[1, i].set_aspect('equal')
+    #     axes[1, i].set_xlim(1, 100)
+    #     axes[1, i].set_ylim(1, 100)
+    #     axes[1, i].grid(True)
+    #     axes[1, i].invert_yaxis()
+    #     axes[1, i].legend()
+
+    #     axes[2, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+    #             gt_df[gt_df['uid'] == uid]['y'],
+    #             label='gt', alpha=0.5, s=10, color='green')
+    #     axes[2, i].set_title(f'UID {uid} GT')
+    #     axes[2, i].set_xlabel('x')  
+    #     axes[2, i].set_ylabel('y')
+    #     axes[2, i].set_aspect('equal')
+    #     axes[2, i].set_xlim(1, 100)
+    #     axes[2, i].set_ylim(1, 100)
+    #     axes[2, i].grid(True)
+    #     axes[2, i].invert_yaxis()
+    #     axes[2, i].legend()
+
+    # plt.tight_layout()
+    # plt.show()
+
+    # # 比較top_15的出現次數
+    # def plot_top10_ratio_compare_single_uid_by_gt(mode_df, gt_df, cvae_df, uid):
+    #     def get_xy_counts(df):
+    #         df_uid = df[df['uid'] == uid]
+    #         return df_uid.groupby(['x', 'y']).size()
+
+    #     gt_counts = get_xy_counts(gt_df)
+    #     mode_counts = get_xy_counts(mode_df)
+    #     cvae_counts = get_xy_counts(cvae_df)
+
+    #     gt_top15 = gt_counts.nlargest(15)
+    #     gt_total = gt_counts.sum()
+    #     mode_total = mode_counts.sum()
+    #     cvae_total = cvae_counts.sum()
+
+    #     labels = [f'{idx[0]},{idx[1]}' for idx in gt_top15.index]
+    #     gt_ratios = (gt_top15 / gt_total).values
+    #     mode_ratios = [(mode_counts.get(idx, 0) / mode_total) if mode_total > 0 else 0 for idx in gt_top15.index]
+    #     cvae_ratios = [(cvae_counts.get(idx, 0) / cvae_total) if cvae_total > 0 else 0 for idx in gt_top15.index]
+
+    #     x = np.arange(len(labels))
+    #     width = 0.25
+
+    #     plt.figure(figsize=(24, 12))
+    #     plt.bar(x - width, gt_ratios, width, label='GT')
+    #     plt.bar(x, mode_ratios, width, label='Mode')
+    #     plt.bar(x + width, cvae_ratios, width, label='CVAE')
+    #     plt.ylabel('出現佔比')
+    #     plt.xlabel('(x, y)')
+    #     plt.title(f'UID {uid} (依據GT前15大) (x,y) 出現佔比比較')
+    #     plt.xticks(x, labels, rotation=45)
+    #     plt.legend()
+    #     plt.tight_layout()
+    #     plt.show()
+
+    # # 使用方式
+    # plot_top10_ratio_compare_single_uid_by_gt(mode_pred_df, gt_df, cvae_pred_df, uid=valid_uid_list[0])
+    
+
     # 資料準備
     raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
     raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
@@ -188,14 +288,15 @@ if __name__ == "__main__":
         total_loss = 0
         total_recon = 0
         total_kl = 0
-        for x, mask, lengths, uid, t, weights in dataloader:
+        for x, mask, lengths, uid, t, working_day, weights in dataloader:
             x = x.to(device)
             mask = mask.to(device)
             t = t.to(device)
+            working_day = working_day.long().to(device)
             uid = torch.tensor(uid, dtype=torch.long).to(device)
             weights = weights.to(device)
             optimizer.zero_grad()
-            x_hat, mu, logvar = model(x, uid, t, mask)
+            x_hat, mu, logvar = model(x, uid, t, working_day, mask)
             loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=1)
             loss.backward()
             optimizer.step()
@@ -271,6 +372,7 @@ if __name__ == "__main__":
     plt.title(f'UID {target_uid} 第61~75天軌跡比較')
     plt.xlabel('x')
     plt.ylabel('y')
+    plt.gca().invert_yaxis()  # y軸反轉
     plt.legend()
     plt.grid()
     plt.show()
