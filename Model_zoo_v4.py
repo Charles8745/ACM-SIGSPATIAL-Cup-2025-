@@ -38,12 +38,14 @@ class TrajectoryDataset(Dataset):
                 mask = np.ones(max_len)
             self.data.append(torch.tensor(traj, dtype=torch.float32))
             self.masks.append(torch.tensor(mask, dtype=torch.float32))
-            # 計算 log 級別權重
+            # 計算 指數函數 級別權重
             xy = traj[:, :2]
             pts = [f"{p[0]}_{p[1]}" for p in xy]
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
-            log_weights = np.log2([count_dict[p] + 1 for p in pts])
+            scale = 5  # 放大 log 結果
+            log_base = 1.1
+            log_weights = scale * (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
         self.data = torch.stack(self.data)
         self.masks = torch.stack(self.masks)
@@ -262,10 +264,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 64 # 潛在空間維度
+    latent_dim = 128 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 128
-    hidden_dim = 256
+    uid_embed_dim = 256
+    hidden_dim = 512
     batch_size = 1024
     max_len = 550
     num_layers = 1
@@ -277,7 +279,7 @@ if __name__ == "__main__":
 
     # 訓練迴圈 + EarlyStopping
     epochs = 50000
-    patience = 1000  # 多少 epoch 沒改善就停止
+    patience = 8000  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
