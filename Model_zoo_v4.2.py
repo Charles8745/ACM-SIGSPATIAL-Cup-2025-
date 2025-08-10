@@ -47,7 +47,7 @@ class TrajectoryDataset(Dataset):
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
             scale = 5  # 放大 log 結果
-            log_base = 2
+            log_base = 1.1
             log_weights = scale * (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
         self.data = torch.stack(self.data)
