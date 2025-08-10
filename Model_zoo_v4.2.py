@@ -47,7 +47,7 @@ class TrajectoryDataset(Dataset):
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
             scale = 5  # 放大 log 結果
-            log_base = 1.1
+            log_base = 2
             log_weights = scale * (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
         self.data = torch.stack(self.data)
@@ -63,22 +63,27 @@ class TrajectoryDataset(Dataset):
         length = self.lengths[idx]
         uid = self.uid_list[idx]
         t_seq = traj[:, 2].long()       # t
-        working_day_seq = traj[:, 3].long()  # 假設 working_day 在第4欄
-        weights = self.weights[idx]     # (max_len,)
-        return traj, mask, length, uid, t_seq, working_day_seq, weights
+        working_day_seq = traj[:, 3].long()
+        weights = self.weights[idx]
+        x = traj[:, 0].long().clamp(1, 200) - 1
+        y = traj[:, 1].long().clamp(1, 200) - 1
+        return traj, mask, length, uid, t_seq, working_day_seq, weights, x, y
 
 class CVAE(nn.Module):
-    def __init__(self, input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers=1):
+    def __init__(self, input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers=1, dropout=0.3):
         super().__init__()
         # conditional embedding
         self.uid_embedding = nn.Embedding(uid_dim, uid_embed_dim)
         self.t_embedding = nn.Embedding(49, 24) # 假設 t 的範圍是 0~48 壓到24維
-        self.working_day_embedding = nn.Embedding(2, 2)  # 2種，嵌入4維，可調
+        self.working_day_embedding = nn.Embedding(2, 2)  # 2種，嵌入2維，可調
 
-        self.encoder_rnn = nn.LSTM(input_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers)
+        self.encoder_rnn = nn.LSTM(input_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers, dropout=dropout if num_layers > 1 else 0)
         self.encoder_fc = nn.Linear(hidden_dim, latent_dim * 2)
-        self.decoder_rnn = nn.LSTM(latent_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers)
-        self.decoder_fc = nn.Linear(hidden_dim, input_dim)
+        self.decoder_rnn = nn.LSTM(latent_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers, dropout=dropout if num_layers > 1 else 0)
+        self.dropout = nn.Dropout(dropout)
+        self.decoder_fc_x = nn.Linear(hidden_dim, 200)
+        self.decoder_fc_y = nn.Linear(hidden_dim, 200)
+        self.max_len = max_len
         self.max_len = max_len
 
     def encode(self, x, uid, t, working_day, mask):
@@ -94,6 +99,7 @@ class CVAE(nn.Module):
         packed = torch.nn.utils.rnn.pack_padded_sequence(x_cat, lengths, batch_first=True, enforce_sorted=False)
         _, (h_n, _) = self.encoder_rnn(packed)
         h = h_n[-1]
+        h = self.dropout(h)  # 加入 dropout
         h = self.encoder_fc(h)
         mu, logvar = torch.chunk(h, 2, dim=-1)
         return mu, logvar
@@ -111,22 +117,34 @@ class CVAE(nn.Module):
         z_expand = z.unsqueeze(1).expand(-1, t.size(1), -1)
         z_cat_seq = torch.cat([z_expand, uid_embed_expand, t_embed, wd_embed], dim=-1)
         out, _ = self.decoder_rnn(z_cat_seq)
-        out = self.decoder_fc(out)  # (batch, max_len, 2)
-        return out
+        out = self.dropout(out)  # 加入 dropout
+        x_logits = self.decoder_fc_x(out)
+        y_logits = self.decoder_fc_y(out)
+        return x_logits, y_logits
     
     def forward(self, x, uid, t, working_day, mask):
         mu, logvar = self.encode(x, uid, t, working_day, mask)
         z = self.reparameterize(mu, logvar)
-        x_hat = self.decode(z, uid, t, working_day)
-        return x_hat, mu, logvar
-
-def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
-    xy = x[..., :2]
-    recon_loss = ((x_hat - xy) ** 2).sum(dim=-1)
-    recon_loss = (recon_loss * weights * mask).sum() / (weights * mask).sum()
-    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)
-    kl_loss = kl_loss.mean()
-    return recon_loss + beta * kl_loss, recon_loss, kl_loss
+        x_logits, y_logits = self.decode(z, uid, t, working_day)
+        return x_logits, y_logits, mu, logvar
+    
+def cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=0.05):
+    # x_logits, y_logits: (batch, max_len, 200)
+    # x_true, y_true: (batch, max_len)
+    x_logits = x_logits.view(-1, 200)
+    y_logits = y_logits.view(-1, 200)
+    x_true = x_true.view(-1)
+    y_true = y_true.view(-1)
+    mask = mask.view(-1)
+    weights = weights.view(-1)
+    valid = mask > 0
+    loss_fn = nn.CrossEntropyLoss(reduction='none')
+    x_loss = loss_fn(x_logits[valid], x_true[valid])
+    y_loss = loss_fn(y_logits[valid], y_true[valid])
+    ce_loss = (x_loss + y_loss) * weights[valid]
+    weighted_loss = ce_loss.sum() / weights[valid].sum()
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1).mean()
+    return weighted_loss + beta * kl_loss, weighted_loss, kl_loss
 
 def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
     model.eval()
@@ -155,8 +173,11 @@ def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
         gen_len = user_test_df.shape[0]
         t_seq_gen = torch.tensor(user_test_df['t'].values, dtype=torch.long).unsqueeze(0).to(device)
         wd_seq_gen = torch.tensor(user_test_df['working_day'].values, dtype=torch.long).unsqueeze(0).to(device)
-        future_traj = model.decode(z, uid_tensor, t_seq_gen, wd_seq_gen)
-        return future_traj.squeeze(0).cpu().numpy()
+        x_logits, y_logits = model.decode(z, uid_tensor, t_seq_gen, wd_seq_gen)
+        x_pred = x_logits.argmax(dim=-1).squeeze(0).cpu().numpy()[:gen_len] + 1
+        y_pred = y_logits.argmax(dim=-1).squeeze(0).cpu().numpy()[:gen_len] + 1
+        future_traj = np.stack([x_pred, y_pred], axis=1)
+        return future_traj
 
 if __name__ == "__main__":
     # # mode vs. CVAE 輸出scatter比較
@@ -267,43 +288,48 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 128 # 潛在空間維度
+    latent_dim = 64 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 256
-    hidden_dim = 512
+    uid_embed_dim = 128
+    hidden_dim = 256
     batch_size = 1024
     max_len = 550
     num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers).to(device)
+    model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers, dropout=0.3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # 訓練迴圈 + EarlyStopping
     epochs = 50000
-    patience = 500  # 多少 epoch 沒改善就停止
+    patience = 100  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
     recon_list = []
     kl_list = []
     for epoch in range(epochs):
+        # KL annealing: 10000個epoch內從0線性增到1
+        beta = min(1.0, epoch / 10000)
         model.train()
         total_loss = 0
         total_recon = 0
         total_kl = 0
-        for x, mask, lengths, uid, t, working_day, weights in dataloader:
+        for x, mask, lengths, uid, t, working_day, weights, x_true, y_true in dataloader:
             x = x.to(device)
             mask = mask.to(device)
             t = t.to(device)
             working_day = working_day.long().to(device)
             uid = torch.tensor(uid, dtype=torch.long).to(device)
             weights = weights.to(device)
+            x_true = x_true.to(device)
+            y_true = y_true.to(device)
             optimizer.zero_grad()
-            x_hat, mu, logvar = model(x, uid, t, working_day, mask)
-            loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=1)
+            x_logits, y_logits, mu, logvar = model(x, uid, t, working_day, mask)
+            loss, recon_loss, kl_loss = cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=beta)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 加上梯度裁剪
             optimizer.step()
             total_loss += loss.item()
             total_recon += recon_loss.item()
