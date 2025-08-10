@@ -279,7 +279,7 @@ if __name__ == "__main__":
 
     # 訓練迴圈 + EarlyStopping
     epochs = 50000
-    patience = 8000  # 多少 epoch 沒改善就停止
+    patience = 500  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
