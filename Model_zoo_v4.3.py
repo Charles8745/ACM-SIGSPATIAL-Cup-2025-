@@ -16,7 +16,8 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
 預測方式改成分類預測
 調整輸出過於單一問題:
-1, 以機率抽樣取代 argmax（Temperature + Top-k / Top-p）
+1. 以機率抽樣取代 argmax（Temperature + Top-k / Top-p）
+2. Label smoothing / 鄰域 soft targets
 """
 
 
@@ -48,7 +49,7 @@ class TrajectoryDataset(Dataset):
             pts = [f"{p[0]}_{p[1]}" for p in xy]
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
-            log_base = 1.1
+            log_base = 5
             log_weights = (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
         self.data = torch.stack(self.data)
@@ -129,7 +130,43 @@ class CVAE(nn.Module):
         x_logits, y_logits = self.decode(z, uid, t, working_day)
         return x_logits, y_logits, mu, logvar
     
-def cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=0.05):
+def make_neighbor_soft_targets(target_idx, num_classes, radius=1, smooth_eps=0.1):
+    """
+    向量化版本，支援 radius=1
+    target_idx: (N,) tensor
+    回傳: (N, num_classes) tensor
+    """
+    N = target_idx.shape[0]
+    device = target_idx.device
+    soft_targets = torch.zeros(N, num_classes, device=device)
+    idx_arange = torch.arange(N, device=device)
+
+    # 計算每個點的鄰居數量（自己+左+右，邊界特別處理）
+    neighbor_count = torch.ones(N, device=device) * 3
+    neighbor_count[target_idx == 0] = 2
+    neighbor_count[target_idx == num_classes - 1] = 2
+
+    # 本身
+    soft_targets[idx_arange, target_idx] = 1.0 - smooth_eps + smooth_eps / neighbor_count
+
+    # 左鄰
+    left_mask = (target_idx - 1) >= 0
+    left_idx = target_idx[left_mask] - 1
+    soft_targets[idx_arange[left_mask], left_idx] = smooth_eps / neighbor_count[left_mask]
+
+    # 右鄰
+    right_mask = (target_idx + 1) < num_classes
+    right_idx = target_idx[right_mask] + 1
+    soft_targets[idx_arange[right_mask], right_idx] = smooth_eps / neighbor_count[right_mask]
+
+    return soft_targets
+
+def soft_cross_entropy(logits, soft_targets):
+    logp = F.log_softmax(logits, dim=-1)
+    return -(soft_targets * logp).sum(dim=-1)
+
+def cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=0.05, 
+              label_smooth=True, radius=1, smooth_eps=0.1):
     # x_logits, y_logits: (batch, max_len, 200)
     # x_true, y_true: (batch, max_len)
     x_logits = x_logits.view(-1, 200)
@@ -139,9 +176,18 @@ def cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, bet
     mask = mask.view(-1)
     weights = weights.view(-1)
     valid = mask > 0
-    loss_fn = nn.CrossEntropyLoss(reduction='none')
-    x_loss = loss_fn(x_logits[valid], x_true[valid])
-    y_loss = loss_fn(y_logits[valid], y_true[valid])
+
+    if label_smooth:
+        # 產生 soft target
+        x_soft = make_neighbor_soft_targets(x_true[valid], 200, radius=radius, smooth_eps=smooth_eps)
+        y_soft = make_neighbor_soft_targets(y_true[valid], 200, radius=radius, smooth_eps=smooth_eps)
+        x_loss = soft_cross_entropy(x_logits[valid], x_soft)
+        y_loss = soft_cross_entropy(y_logits[valid], y_soft)
+    else:
+        loss_fn = nn.CrossEntropyLoss(reduction='none')
+        x_loss = loss_fn(x_logits[valid], x_true[valid])
+        y_loss = loss_fn(y_logits[valid], y_true[valid])
+
     ce_loss = (x_loss + y_loss) * weights[valid]
     weighted_loss = ce_loss.sum() / weights[valid].sum()
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1).mean()
@@ -230,10 +276,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 128 # 潛在空間維度
+    latent_dim = 256 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 128
-    hidden_dim = 256
+    hidden_dim = 512
     batch_size = 512
     max_len = 550
     num_layers = 1
@@ -243,75 +289,75 @@ if __name__ == "__main__":
     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers, dropout=0.3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    # # # 訓練迴圈 + EarlyStopping
-    # # epochs = 50000
-    # # patience = 500  # 多少 epoch 沒改善就停止
-    # # best_loss = float('inf')
-    # # wait = 0
-    # # loss_list = []
-    # # recon_list = []
-    # # kl_list = []
-    # # for epoch in range(epochs):
-    # #     # KL annealing: 10000個epoch內從0線性增到1
-    # #     beta = min(1.0, epoch / 10000)
-    # #     model.train()
-    # #     total_loss = 0
-    # #     total_recon = 0
-    # #     total_kl = 0
-    # #     for x, mask, lengths, uid, t, working_day, weights, x_true, y_true in dataloader:
-    # #         x = x.to(device)
-    # #         mask = mask.to(device)
-    # #         t = t.to(device)
-    # #         working_day = working_day.long().to(device)
-    # #         uid = torch.tensor(uid, dtype=torch.long).to(device)
-    # #         weights = weights.to(device)
-    # #         x_true = x_true.to(device)
-    # #         y_true = y_true.to(device)
-    # #         optimizer.zero_grad()
-    # #         x_logits, y_logits, mu, logvar = model(x, uid, t, working_day, mask)
-    # #         loss, recon_loss, kl_loss = cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=beta)
-    # #         loss.backward()
-    # #         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 加上梯度裁剪
-    # #         optimizer.step()
-    # #         total_loss += loss.item()
-    # #         total_recon += recon_loss.item()
-    # #         total_kl += kl_loss.item()
-    # #     avg_loss = total_loss / len(dataloader)
-    # #     avg_recon = total_recon / len(dataloader)
-    # #     avg_kl = total_kl / len(dataloader)
-    # #     loss_list.append(avg_loss)
-    # #     recon_list.append(avg_recon)
-    # #     kl_list.append(avg_kl)
-    # #     print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
+    # 訓練迴圈 + EarlyStopping
+    epochs = 50000
+    patience = 100  # 多少 epoch 沒改善就停止
+    best_loss = float('inf')
+    wait = 0
+    loss_list = []
+    recon_list = []
+    kl_list = []
+    for epoch in range(epochs):
+        # KL annealing: 10000個epoch內從0線性增到1
+        beta = min(1.0, epoch / 10000)
+        model.train()
+        total_loss = 0
+        total_recon = 0
+        total_kl = 0
+        for x, mask, lengths, uid, t, working_day, weights, x_true, y_true in dataloader:
+            x = x.to(device)
+            mask = mask.to(device)
+            t = t.to(device)
+            working_day = working_day.long().to(device)
+            uid = torch.tensor(uid, dtype=torch.long).to(device)
+            weights = weights.to(device)
+            x_true = x_true.to(device)
+            y_true = y_true.to(device)
+            optimizer.zero_grad()
+            x_logits, y_logits, mu, logvar = model(x, uid, t, working_day, mask)
+            loss, recon_loss, kl_loss = cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=beta)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 加上梯度裁剪
+            optimizer.step()
+            total_loss += loss.item()
+            total_recon += recon_loss.item()
+            total_kl += kl_loss.item()
+        avg_loss = total_loss / len(dataloader)
+        avg_recon = total_recon / len(dataloader)
+        avg_kl = total_kl / len(dataloader)
+        loss_list.append(avg_loss)
+        recon_list.append(avg_recon)
+        kl_list.append(avg_kl)
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
 
-    # #     # EarlyStopping 機制
-    # #     if avg_loss < best_loss:
-    # #         best_loss = avg_loss
-    # #         wait = 0
-    # #         torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
-    # #     else:
-    # #         wait += 1
-    # #         if wait >= patience:
-    # #             print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
-    # #             break
+        # EarlyStopping 機制
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            wait = 0
+            torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
+        else:
+            wait += 1
+            if wait >= patience:
+                print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+                break
 
 
-    # # # 儲存模型
-    # # os.makedirs('./ckpt/CVAE', exist_ok=True)
-    # # torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
-    # # print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
+    # 儲存模型
+    os.makedirs('./ckpt/CVAE', exist_ok=True)
+    torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
+    print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
 
-    # # # 顯示 loss 趨勢圖
-    # # plt.figure(figsize=(8, 6))
-    # # plt.plot(loss_list, label='Total Loss')
-    # # plt.plot(recon_list, label='Reconstruction Loss')
-    # # plt.plot(kl_list, label='KL Loss')
-    # # plt.xlabel('Epoch')
-    # # plt.ylabel('Loss')
-    # # plt.title('CVAE Loss Trend')
-    # # plt.legend()
-    # # plt.grid()
-    # # plt.show()
+    # 顯示 loss 趨勢圖
+    plt.figure(figsize=(8, 6))
+    plt.plot(loss_list, label='Total Loss')
+    plt.plot(recon_list, label='Reconstruction Loss')
+    plt.plot(kl_list, label='KL Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('CVAE Loss Trend')
+    plt.legend()
+    plt.grid()
+    plt.show()
 
     # 載入最佳模型權重
     model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_best.pth", map_location=device))
