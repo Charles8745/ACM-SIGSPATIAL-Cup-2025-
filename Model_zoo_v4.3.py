@@ -18,6 +18,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 調整輸出過於單一問題:
 1. 以機率抽樣取代 argmax（Temperature + Top-k / Top-p）
 2. Label smoothing / 鄰域 soft targets
+3. Entropy regularization
 """
 
 
@@ -49,7 +50,7 @@ class TrajectoryDataset(Dataset):
             pts = [f"{p[0]}_{p[1]}" for p in xy]
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
-            log_base = 5
+            log_base = 10
             log_weights = (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
         self.data = torch.stack(self.data)
@@ -166,7 +167,7 @@ def soft_cross_entropy(logits, soft_targets):
     return -(soft_targets * logp).sum(dim=-1)
 
 def cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=0.05, 
-              label_smooth=True, radius=1, smooth_eps=0.1):
+              label_smooth=True, radius=1, smooth_eps=0.1, lambda_entropy=0.01):
     # x_logits, y_logits: (batch, max_len, 200)
     # x_true, y_true: (batch, max_len)
     x_logits = x_logits.view(-1, 200)
@@ -191,7 +192,18 @@ def cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, bet
     ce_loss = (x_loss + y_loss) * weights[valid]
     weighted_loss = ce_loss.sum() / weights[valid].sum()
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1).mean()
-    return weighted_loss + beta * kl_loss, weighted_loss, kl_loss
+
+    # === Entropy regularization ===
+    # 只對有效位置計算
+    x_probs = F.softmax(x_logits[valid], dim=-1)
+    y_probs = F.softmax(y_logits[valid], dim=-1)
+    x_entropy = -(x_probs * (x_probs + 1e-12).log()).sum(dim=-1)
+    y_entropy = -(y_probs * (y_probs + 1e-12).log()).sum(dim=-1)
+    entropy = (x_entropy + y_entropy).mean()  # 平均 over 有效 batch/time
+
+    # lambda_entropy 可調整
+    loss = weighted_loss + beta * kl_loss - lambda_entropy * entropy
+    return loss, weighted_loss, kl_loss
 
 def sample_from_logits(logits, temperature=1.0, top_k=None, top_p=None):
     """
@@ -276,10 +288,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 256 # 潛在空間維度
+    latent_dim = 512 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 128
-    hidden_dim = 512
+    hidden_dim = 1024
     batch_size = 512
     max_len = 550
     num_layers = 1
