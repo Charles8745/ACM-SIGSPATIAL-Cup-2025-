@@ -13,7 +13,10 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
-
+"""
+採用reg.
+1. 增加特徵: delta_t
+"""
 
 class TrajectoryDataset(Dataset):
     def __init__(self, df, uid_list, max_len=400):
@@ -22,13 +25,13 @@ class TrajectoryDataset(Dataset):
         self.data = []
         self.lengths = []
         self.masks = []
-        self.weights = []  # 新增：儲存每個序列的權重
+        self.weights = []
+        self.delta_t_seqs = []  # 新增
         for uid in uid_list:
             user_df = df[df['uid'] == uid]
-            traj = user_df[['x', 'y', 't', 'working_day']].values
+            traj = user_df[['x', 'y', 't', 'working_day', 'delta_t']].values  
             length = len(traj)
             self.lengths.append(length)
-            # padding
             if length < max_len:
                 pad = np.zeros((max_len - length, traj.shape[1]))
                 traj = np.vstack([traj, pad])
@@ -38,7 +41,6 @@ class TrajectoryDataset(Dataset):
                 mask = np.ones(max_len)
             self.data.append(torch.tensor(traj, dtype=torch.float32))
             self.masks.append(torch.tensor(mask, dtype=torch.float32))
-            # 計算 指數函數 級別權重
             xy = traj[:, :2]
             pts = [f"{p[0]}_{p[1]}" for p in xy]
             unique, counts = np.unique(pts, return_counts=True)
@@ -46,77 +48,27 @@ class TrajectoryDataset(Dataset):
             log_base = 1.2
             log_weights = (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
+            self.delta_t_seqs.append(torch.tensor(traj[:, 4], dtype=torch.long))  # delta_t
         self.data = torch.stack(self.data)
         self.masks = torch.stack(self.masks)
-        self.weights = torch.stack(self.weights)  # (num, max_len)
+        self.weights = torch.stack(self.weights)
+        self.delta_t_seqs = torch.stack(self.delta_t_seqs)
 
     def __len__(self):
         return len(self.uid_list)
 
     def __getitem__(self, idx):
-        traj = self.data[idx]           # (max_len, input_dim)
-        mask = self.masks[idx]          # (max_len,)
+        traj = self.data[idx]
+        mask = self.masks[idx]
         length = self.lengths[idx]
         uid = self.uid_list[idx]
-        t_seq = traj[:, 2].long()       # t
-        working_day_seq = traj[:, 3].long()  # 假設 working_day 在第4欄
-        weights = self.weights[idx]     # (max_len,)
-        return traj, mask, length, uid, t_seq, working_day_seq, weights
+        t_seq = traj[:, 2].long()
+        working_day_seq = traj[:, 3].long()
+        delta_t_seq = self.delta_t_seqs[idx]  # 新增
+        weights = self.weights[idx]
+        return traj, mask, length, uid, t_seq, working_day_seq, delta_t_seq, weights
 
-class CVAE(nn.Module):
-    def __init__(self, input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers=1):
-        super().__init__()
-        # conditional embedding
-        self.uid_embedding = nn.Embedding(uid_dim, uid_embed_dim)
-        self.t_embedding = nn.Embedding(49, 24) # 假設 t 的範圍是 0~48 壓到24維
-        self.working_day_embedding = nn.Embedding(2, 2)  # 2種，嵌入4維，可調
 
-        self.encoder_rnn = nn.LSTM(input_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers)
-        self.encoder_fc = nn.Linear(hidden_dim, latent_dim * 2)
-        self.decoder_rnn = nn.LSTM(latent_dim + uid_embed_dim +24+2, hidden_dim, batch_first=True, num_layers=num_layers)
-        self.decoder_fc = nn.Linear(hidden_dim, hidden_dim)
-        self.decoder_fc2 = nn.Linear(hidden_dim, input_dim)
-        self.max_len = max_len
-
-    def encode(self, x, uid, t, working_day, mask):
-        # x: (batch, max_len, input_dim)  # 包含 t
-        # t: (batch, max_len)
-        uid_embed = self.uid_embedding(uid)  # (batch, uid_embed_dim)
-        t_embed = self.t_embedding(t)        # (batch, max_len, t_embed_dim)
-        wd_embed = self.working_day_embedding(working_day)  # (batch, max_len, wd_embed_dim)
-        uid_embed_expand = uid_embed.unsqueeze(1).expand(-1, x.size(1), -1)
-        x_wo_t = x[..., :2]
-        x_cat = torch.cat([x_wo_t, uid_embed_expand, t_embed, wd_embed], dim=-1)
-        lengths = mask.sum(dim=1).long().cpu()
-        packed = torch.nn.utils.rnn.pack_padded_sequence(x_cat, lengths, batch_first=True, enforce_sorted=False)
-        _, (h_n, _) = self.encoder_rnn(packed)
-        h = h_n[-1]
-        h = self.encoder_fc(h)
-        mu, logvar = torch.chunk(h, 2, dim=-1)
-        return mu, logvar
-
-    def reparameterize(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return mu + eps * std
-
-    def decode(self, z, uid, t, working_day):
-        uid_embed = self.uid_embedding(uid)
-        t_embed = self.t_embedding(t)
-        wd_embed = self.working_day_embedding(working_day)
-        uid_embed_expand = uid_embed.unsqueeze(1).expand(-1, t.size(1), -1)
-        z_expand = z.unsqueeze(1).expand(-1, t.size(1), -1)
-        z_cat_seq = torch.cat([z_expand, uid_embed_expand, t_embed, wd_embed], dim=-1)
-        out, _ = self.decoder_rnn(z_cat_seq)
-        out = self.decoder_fc(out)  # (batch, max_len, 2)
-        out = F.relu(self.decoder_fc2(out))  # (batch, max_len, input_dim)
-        return out
-    
-    def forward(self, x, uid, t, working_day, mask):
-        mu, logvar = self.encode(x, uid, t, working_day, mask)
-        z = self.reparameterize(mu, logvar)
-        x_hat = self.decode(z, uid, t, working_day)
-        return x_hat, mu, logvar
 
 def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
     xy = x[..., :2]
