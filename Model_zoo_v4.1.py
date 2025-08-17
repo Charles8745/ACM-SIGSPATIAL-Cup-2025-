@@ -15,7 +15,7 @@ matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
 採用reg.
-1. 增加特徵: delta_t
+1. 增加特徵: day_of_week
 """
 
 class TrajectoryDataset(Dataset):
@@ -26,10 +26,10 @@ class TrajectoryDataset(Dataset):
         self.lengths = []
         self.masks = []
         self.weights = []
-        self.delta_t_seqs = []  # 新增
+        self.day_of_week_seqs = []  # 改名
         for uid in uid_list:
             user_df = df[df['uid'] == uid]
-            traj = user_df[['x', 'y', 't', 'working_day', 'delta_t']].values  
+            traj = user_df[['x', 'y', 't', 'working_day', 'day_of_week']].values  # 換成 day_of_week
             length = len(traj)
             self.lengths.append(length)
             if length < max_len:
@@ -45,14 +45,14 @@ class TrajectoryDataset(Dataset):
             pts = [f"{p[0]}_{p[1]}" for p in xy]
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
-            log_base = 1.2
+            log_base = 10
             log_weights = (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
-            self.delta_t_seqs.append(torch.tensor(traj[:, 4], dtype=torch.long))  # delta_t
+            self.day_of_week_seqs.append(torch.tensor(traj[:, 4], dtype=torch.long))  # day_of_week
         self.data = torch.stack(self.data)
         self.masks = torch.stack(self.masks)
         self.weights = torch.stack(self.weights)
-        self.delta_t_seqs = torch.stack(self.delta_t_seqs)
+        self.day_of_week_seqs = torch.stack(self.day_of_week_seqs)
 
     def __len__(self):
         return len(self.uid_list)
@@ -64,11 +64,64 @@ class TrajectoryDataset(Dataset):
         uid = self.uid_list[idx]
         t_seq = traj[:, 2].long()
         working_day_seq = traj[:, 3].long()
-        delta_t_seq = self.delta_t_seqs[idx]  # 新增
+        day_of_week_seq = self.day_of_week_seqs[idx]  # 改名
         weights = self.weights[idx]
-        return traj, mask, length, uid, t_seq, working_day_seq, delta_t_seq, weights
+        return traj, mask, length, uid, t_seq, working_day_seq, day_of_week_seq, weights
 
+class CVAE(nn.Module):
+    def __init__(self, input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers=1):
+        super().__init__()
+        self.uid_embedding = nn.Embedding(uid_dim, uid_embed_dim)
+        self.t_embedding = nn.Embedding(49, 24)
+        self.working_day_embedding = nn.Embedding(2, 2)
+        self.day_of_week_embedding = nn.Embedding(7, 7)  # 改成7
 
+        self.encoder_rnn = nn.LSTM(input_dim + uid_embed_dim + 24 + 2 + 7, hidden_dim, batch_first=True, num_layers=num_layers)
+        self.encoder_fc = nn.Linear(hidden_dim, latent_dim * 2)
+        self.decoder_rnn = nn.LSTM(latent_dim + uid_embed_dim + 24 + 2 + 7, hidden_dim, batch_first=True, num_layers=num_layers)
+        self.decoder_fc = nn.Linear(hidden_dim, hidden_dim)
+        self.decoder_fc2 = nn.Linear(hidden_dim, input_dim)
+        self.max_len = max_len
+
+    def encode(self, x, uid, t, working_day, day_of_week, mask):
+        uid_embed = self.uid_embedding(uid)
+        t_embed = self.t_embedding(t)
+        wd_embed = self.working_day_embedding(working_day)
+        day_of_week_embed = self.day_of_week_embedding(day_of_week)
+        uid_embed_expand = uid_embed.unsqueeze(1).expand(-1, x.size(1), -1)
+        x_wo_t = x[..., :2]
+        x_cat = torch.cat([x_wo_t, uid_embed_expand, t_embed, wd_embed, day_of_week_embed], dim=-1)
+        lengths = mask.sum(dim=1).long().cpu()
+        packed = torch.nn.utils.rnn.pack_padded_sequence(x_cat, lengths, batch_first=True, enforce_sorted=False)
+        _, (h_n, _) = self.encoder_rnn(packed)
+        h = h_n[-1]
+        h = self.encoder_fc(h)
+        mu, logvar = torch.chunk(h, 2, dim=-1)
+        return mu, logvar
+    
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z, uid, t, working_day, day_of_week):
+        uid_embed = self.uid_embedding(uid)
+        t_embed = self.t_embedding(t)
+        wd_embed = self.working_day_embedding(working_day)
+        day_of_week_embed = self.day_of_week_embedding(day_of_week)
+        uid_embed_expand = uid_embed.unsqueeze(1).expand(-1, t.size(1), -1)
+        z_expand = z.unsqueeze(1).expand(-1, t.size(1), -1)
+        z_cat_seq = torch.cat([z_expand, uid_embed_expand, t_embed, wd_embed, day_of_week_embed], dim=-1)
+        out, _ = self.decoder_rnn(z_cat_seq)
+        out = self.decoder_fc(out)
+        out = F.relu(self.decoder_fc2(out))
+        return out
+
+    def forward(self, x, uid, t, working_day, day_of_week, mask):
+        mu, logvar = self.encode(x, uid, t, working_day, day_of_week, mask)
+        z = self.reparameterize(mu, logvar)
+        x_hat = self.decode(z, uid, t, working_day, day_of_week)
+        return x_hat, mu, logvar
 
 def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
     xy = x[..., :2]
@@ -81,7 +134,7 @@ def cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=0.05):
 def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
     model.eval()
     with torch.no_grad():
-        traj = user_train_df[['x', 'y', 't', 'working_day']].values
+        traj = user_train_df[['x', 'y', 't', 'working_day', 'day_of_week']].values
         length = len(traj)
         max_len = model.max_len
         if length < max_len:
@@ -96,16 +149,16 @@ def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
         uid_tensor = torch.tensor([uid], dtype=torch.long).to(device)
         t_seq_train = torch.tensor(traj[:, 2], dtype=torch.long).unsqueeze(0).to(device)
         wd_seq_train = torch.tensor(traj[:, 3], dtype=torch.long).unsqueeze(0).to(device)
+        day_of_week_seq_train = torch.tensor(traj[:, 4], dtype=torch.long).unsqueeze(0).to(device)
 
-        # 編碼得到 z
-        mu, logvar = model.encode(x, uid_tensor, t_seq_train, wd_seq_train, mask)
+        mu, logvar = model.encode(x, uid_tensor, t_seq_train, wd_seq_train, day_of_week_seq_train, mask)
         z = model.reparameterize(mu, logvar)
 
-        # 生成未來軌跡
         gen_len = user_test_df.shape[0]
         t_seq_gen = torch.tensor(user_test_df['t'].values, dtype=torch.long).unsqueeze(0).to(device)
         wd_seq_gen = torch.tensor(user_test_df['working_day'].values, dtype=torch.long).unsqueeze(0).to(device)
-        future_traj = model.decode(z, uid_tensor, t_seq_gen, wd_seq_gen)
+        day_of_week_seq_gen = torch.tensor(user_test_df['day_of_week'].values, dtype=torch.long).unsqueeze(0).to(device)
+        future_traj = model.decode(z, uid_tensor, t_seq_gen, wd_seq_gen, day_of_week_seq_gen)
         return future_traj.squeeze(0).cpu().numpy()
 
 if __name__ == "__main__":
@@ -125,7 +178,7 @@ if __name__ == "__main__":
     latent_dim = 256 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 256
-    hidden_dim = 512
+    hidden_dim = 256
     batch_size = 512
     max_len = 550
     num_layers = 1
@@ -148,15 +201,16 @@ if __name__ == "__main__":
         total_loss = 0
         total_recon = 0
         total_kl = 0
-        for x, mask, lengths, uid, t, working_day, weights in dataloader:
+        for x, mask, lengths, uid, t, working_day, day_of_week, weights in dataloader:
             x = x.to(device)
             mask = mask.to(device)
             t = t.to(device)
             working_day = working_day.long().to(device)
+            day_of_week = day_of_week.to(device)
             uid = torch.tensor(uid, dtype=torch.long).to(device)
             weights = weights.to(device)
             optimizer.zero_grad()
-            x_hat, mu, logvar = model(x, uid, t, working_day, mask)
+            x_hat, mu, logvar = model(x, uid, t, working_day, day_of_week, mask)
             loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=1)
             loss.backward()
             optimizer.step()
