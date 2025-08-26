@@ -533,7 +533,8 @@ if __name__ == "__main__":
         plt.tight_layout()
         plt.show()
 
-    for i in range(5):
+    valid_uid_list = mode_pred_df['uid'].unique().tolist()
+    for i in range(10):
         plot_x_y_sequence_compare(uid=valid_uid_list[i],
                                     mode_df=mode_pred_df,
                                     cvae_df=cvae_pred_df,
