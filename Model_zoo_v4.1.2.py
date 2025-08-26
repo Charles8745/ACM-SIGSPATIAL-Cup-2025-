@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.cuda.amp import autocast, GradScaler
 import time 
 import geobleu
 import validator_InModify as validator
@@ -47,7 +48,7 @@ class TrajectoryDataset(Dataset):
             pts = [f"{p[0]}_{p[1]}" for p in xy_valid]
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
-            log_base = 2
+            log_base = 10
             log_weights_valid = (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
             weights_full = np.zeros(max_len, dtype=np.float32)
             weights_full[:length] = log_weights_valid
@@ -179,6 +180,12 @@ def generate_future_trajectory(model, user_train_df, user_test_df, uid, device, 
         return future_traj.squeeze(0).cpu().numpy()
 
 if __name__ == "__main__":
+    # 加速選項
+    torch.backends.cudnn.benchmark = True
+    try:
+        torch.set_float32_matmul_precision('high')  # 允許 TF32 / 加速 matmul
+    except Exception:
+        pass
     # 資料準備
     raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
     raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
@@ -192,22 +199,36 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 256 # 潛在空間維度
+    latent_dim = 2048 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 512
-    hidden_dim = 256
-    batch_size = 1024
-    max_len = 500
-    num_layers = 1
+    uid_embed_dim = 1024
+    hidden_dim = 2048
+    batch_size = 128
+    max_len = 550
+    num_layers = 2
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # DataLoader 加速：workers、pin_memory、persistent_workers
+    num_workers = max(0, min(8, (os.cpu_count() or 1) - 1))
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=(num_workers > 0),
+        drop_last=False,
+        prefetch_factor=2 if num_workers > 0 else None
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
+    # AMP GradScaler
+    scaler = GradScaler(enabled=(device.type == 'cuda'))
+
     # 訓練迴圈 + EarlyStopping
     epochs = 10000
-    patience = 250  # 多少 epoch 沒改善就停止
+    patience = 500  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
@@ -219,27 +240,35 @@ if __name__ == "__main__":
         total_recon = 0
         total_kl = 0
         for x, mask, lengths, uid, t, working_day, day_of_week, weights in dataloader:
-            x = x.to(device)
-            mask = mask.to(device)
-            t = t.to(device)
-            working_day = working_day.long().to(device)
-            day_of_week = day_of_week.to(device)
-            uid = torch.tensor(uid, dtype=torch.long).to(device)
-            weights = weights.to(device)
-            optimizer.zero_grad()
-            x_hat, mu, logvar = model(x, uid, t, working_day, day_of_week, mask)
-            loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=1)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-            total_recon += recon_loss.item()
-            total_kl += kl_loss.item()
+            # 搭配 pin_memory 使用 non_blocking，加速 H2D 拷貝
+            x = x.to(device, non_blocking=True)
+            mask = mask.to(device, non_blocking=True)
+            t = t.to(device, non_blocking=True)
+            working_day = working_day.long().to(device, non_blocking=True)
+            day_of_week = day_of_week.to(device, non_blocking=True)
+            uid = uid.to(device, non_blocking=True)            # 直接用 tensor，不要重建
+            weights = weights.to(device, non_blocking=True)
+
+            optimizer.zero_grad(set_to_none=True)
+            # AMP 前向與反向
+            with autocast(enabled=(device.type == 'cuda'), dtype=torch.float16):
+                x_hat, mu, logvar = model(x, uid, t, working_day, day_of_week, mask)
+                loss, recon_loss, kl_loss = cvae_loss(x_hat, x, mu, logvar, mask, weights, beta=1)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            total_loss += float(loss)
+            total_recon += float(recon_loss)
+            total_kl += float(kl_loss)
         avg_loss = total_loss / len(dataloader)
         avg_recon = total_recon / len(dataloader)
         avg_kl = total_kl / len(dataloader)
         loss_list.append(avg_loss)
         recon_list.append(avg_recon)
         kl_list.append(avg_kl)
+
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
 
         # EarlyStopping 機制
