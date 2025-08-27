@@ -13,7 +13,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 
 # 分別讀取眾數結果和生成結果
 mode_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
-gen_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h2048l2048_cluster1.csv')
+gen_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
 
 
 valid_uid_list = mode_pred_df['uid'].unique().tolist()
@@ -28,7 +28,7 @@ def sigmoid_weight(dist, threshold=10, k=1):
 
 results = []
 threshold = 10
-k = 0.5  # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
+k = 10  # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
 for mode_row, gen_row in zip(mode_pred_df.itertuples(index=False), gen_pred_df.itertuples(index=False)):
     mode_x, mode_y = mode_row.x, mode_row.y
     gen_x, gen_y = gen_row.x, gen_row.y
