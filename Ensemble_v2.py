@@ -8,34 +8,28 @@ import matplotlib
 matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
-1. 採用非線性權重，若大於閥值則趨向生成結果，否則更趨向眾數結果
+1. 採用非線性權重，若大於閥值則趨向生成結果，否則更趨向眾數結果，並且考慮三個結果
 """
 
 # 分別讀取眾數結果和生成結果
-mode_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
-gen_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h2048l2048_cluster1.csv')
+mode_pred_df = pd.read_csv('./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+gen_pred_df1 = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h2048l2048_cluster1.csv')
+gen_pred_df2 = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
 
 
 valid_uid_list = mode_pred_df['uid'].unique().tolist()
 gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
 gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
 
-# 依據輸出結果做ensemble
-def sigmoid_weight(dist, threshold=10, k=1):
-    # k 控制曲線斜率，threshold 控制轉折點
-    # 當 dist = threshold 時，weight 約為 0.5
-    return 1 / (1 + np.exp(-k * (dist - threshold)))
 
 results = []
-threshold = 10
-k = 0.5  # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
-for mode_row, gen_row in zip(mode_pred_df.itertuples(index=False), gen_pred_df.itertuples(index=False)):
+for mode_row, gen_row1, gen_row2 in zip(mode_pred_df.itertuples(index=False), gen_pred_df1.itertuples(index=False), gen_pred_df2.itertuples(index=False)):
     mode_x, mode_y = mode_row.x, mode_row.y
-    gen_x, gen_y = gen_row.x, gen_row.y
-    dist = np.sqrt((mode_x - gen_x) ** 2 + (mode_y - gen_y) ** 2)
-    weight = sigmoid_weight(dist, threshold, k)
-    ensemble_x = int(round(mode_x * (1 - weight) + gen_x * weight))
-    ensemble_y = int(round(mode_y * (1 - weight) + gen_y * weight))
+    gen_x1, gen_y1 = gen_row1.x, gen_row1.y
+    gen_x2, gen_y2 = gen_row2.x, gen_row2.y
+
+    ensemble_x = int(round(0.4*mode_x+0.3*gen_x1+0.3*gen_x2))
+    ensemble_y = int(round(0.4*mode_y+0.3*gen_y1+0.3*gen_y2))
     result = mode_row._asdict()
     result['x'] = ensemble_x
     result['y'] = ensemble_y
@@ -43,19 +37,6 @@ for mode_row, gen_row in zip(mode_pred_df.itertuples(index=False), gen_pred_df.i
 
 ensemble_df = pd.DataFrame(results)
 
-# # 畫出 sigmoid 權重曲線
-# distances = np.linspace(0, 30, 300)
-# plt.figure(figsize=(8, 5))
-# for k_val in [0.5, 1, 2, 5, 10]:
-#     weights = [sigmoid_weight(d, threshold=10, k=k_val) for d in distances]
-#     plt.plot(distances, weights, label=f'k={k_val}')
-# plt.axvline(threshold, color='gray', linestyle='--', label=f'閾值={threshold}')
-# plt.xlabel('歐式距離')
-# plt.ylabel('生成結果權重')
-# plt.title('不同k值的Sigmoid加權曲線')
-# plt.legend()
-# plt.grid(True)
-# plt.show()
 
 # 儲存ensemble結果
 os.makedirs('./Predictions/Ensemble', exist_ok=True)
