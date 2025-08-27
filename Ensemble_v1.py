@@ -28,7 +28,7 @@ def sigmoid_weight(dist, threshold=10, k=1):
 
 results = []
 threshold = 10
-k = 10  # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
+k = 0.1  # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
 for mode_row, gen_row in zip(mode_pred_df.itertuples(index=False), gen_pred_df.itertuples(index=False)):
     mode_x, mode_y = mode_row.x, mode_row.y
     gen_x, gen_y = gen_row.x, gen_row.y

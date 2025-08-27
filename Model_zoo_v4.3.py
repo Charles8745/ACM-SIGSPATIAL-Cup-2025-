@@ -292,7 +292,7 @@ if __name__ == "__main__":
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 128
     hidden_dim = 1024
-    batch_size = 512
+    batch_size = 256
     max_len = 550
     num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)

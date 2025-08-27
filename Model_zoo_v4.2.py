@@ -11,13 +11,12 @@ import matplotlib.pyplot as plt
 import matplotlib
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+from torch.cuda.amp import autocast, GradScaler
 matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
 預測方式改成分類預測
 """
-
-
 class TrajectoryDataset(Dataset):
     def __init__(self, df, uid_list, max_len=400):
         self.uid_list = uid_list
@@ -41,28 +40,31 @@ class TrajectoryDataset(Dataset):
                 mask = np.ones(max_len)
             self.data.append(torch.tensor(traj, dtype=torch.float32))
             self.masks.append(torch.tensor(mask, dtype=torch.float32))
-            # 計算 指數函數 級別權重
-            xy = traj[:, :2]
-            pts = [f"{p[0]}_{p[1]}" for p in xy]
+            # 僅用有效步長計算權重，之後補 0
+            xy_valid = traj[:length, :2]
+            pts = [f"{p[0]}_{p[1]}" for p in xy_valid]
             unique, counts = np.unique(pts, return_counts=True)
             count_dict = dict(zip(unique, counts))
-            scale = 5  # 放大 log 結果
-            log_base = 1.1
-            log_weights = scale * (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
-            self.weights.append(torch.tensor(log_weights, dtype=torch.float32))
+            log_base = 10
+            log_weights_valid = (np.log([count_dict[p] + 1 for p in pts]) / np.log(log_base))
+            weights_full = np.zeros(max_len, dtype=np.float32)
+            weights_full[:length] = log_weights_valid
+            self.weights.append(torch.tensor(weights_full, dtype=torch.float32))
+
         self.data = torch.stack(self.data)
         self.masks = torch.stack(self.masks)
-        self.weights = torch.stack(self.weights)  # (num, max_len)
+        self.weights = torch.stack(self.weights)
+
 
     def __len__(self):
         return len(self.uid_list)
 
     def __getitem__(self, idx):
         traj = self.data[idx]           # (max_len, input_dim)
-        mask = self.masks[idx]          # (max_len,)
+        mask = self.masks[idx]
         length = self.lengths[idx]
         uid = self.uid_list[idx]
-        t_seq = traj[:, 2].long()       # t
+        t_seq = traj[:, 2].long()
         working_day_seq = traj[:, 3].long()
         weights = self.weights[idx]
         x = traj[:, 0].long().clamp(1, 200) - 1
@@ -180,6 +182,217 @@ def generate_future_trajectory(model, user_train_df, user_test_df, uid, device):
         return future_traj
 
 if __name__ == "__main__":
+    # 加速選項
+    torch.backends.cudnn.benchmark = True
+    try:
+        torch.set_float32_matmul_precision('high')  # 允許 TF32 / 加速 matmul
+    except Exception:
+        pass
+
+    # 資料準備
+    raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
+    raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
+    raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
+    raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
+    raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
+    valid_uid_list = raw_cluster_df[raw_cluster_df['cluster'] == 1]['uid'].unique().tolist()
+    valid_uid_list = valid_uid_list
+    print(f"有效的使用者數量: {len(valid_uid_list)}")
+
+
+    # 模型初始化
+    input_dim = 2 # 目前僅考慮 x, y
+    latent_dim = 2048 # 潛在空間維度
+    uid_dim = max(valid_uid_list) + 1
+    uid_embed_dim = 1024
+    hidden_dim = 2048
+    batch_size = 128
+    max_len = 550
+    num_layers = 1
+    dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
+    num_workers = max(0, min(8, (os.cpu_count() or 1) - 1))
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=(num_workers > 0),
+        drop_last=False,
+        prefetch_factor=2 if num_workers > 0 else None
+    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers, dropout=0.3).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    # # AMP GradScaler
+    # scaler = GradScaler(enabled=(device.type == 'cuda'))
+
+    # # 訓練迴圈 + EarlyStopping
+    # epochs = 10000
+    # patience = 500  # 多少 epoch 沒改善就停止
+    # best_loss = float('inf')
+    # wait = 0
+    # loss_list = []
+    # recon_list = []
+    # kl_list = []
+    # for epoch in range(epochs):
+    #     beta = min(1.0, epoch / 10000)
+    #     model.train()
+    #     total_loss = 0
+    #     total_recon = 0
+    #     total_kl = 0
+    #     for x, mask, lengths, uid, t, working_day, weights, x_true, y_true in dataloader:
+    #         x = x.to(device, non_blocking=True)
+    #         mask = mask.to(device, non_blocking=True)
+    #         t = t.to(device, non_blocking=True)
+    #         working_day = working_day.long().to(device, non_blocking=True)
+    #         uid = torch.tensor(uid, dtype=torch.long).to(device, non_blocking=True)
+    #         weights = weights.to(device, non_blocking=True)
+    #         x_true = x_true.to(device, non_blocking=True)
+    #         y_true = y_true.to(device, non_blocking=True)
+    #         optimizer.zero_grad(set_to_none=True)
+    #         # AMP 前向與反向
+    #         with autocast(enabled=(device.type == 'cuda'), dtype=torch.float16):
+    #             x_logits, y_logits, mu, logvar = model(x, uid, t, working_day, mask)
+    #             loss, recon_loss, kl_loss = cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=beta)
+    #         scaler.scale(loss).backward()
+    #         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    #         scaler.step(optimizer)
+    #         scaler.update()
+    #         total_loss += float(loss)
+    #         total_recon += float(recon_loss)
+    #         total_kl += float(kl_loss)
+    #     avg_loss = total_loss / len(dataloader)
+    #     avg_recon = total_recon / len(dataloader)
+    #     avg_kl = total_kl / len(dataloader)
+    #     loss_list.append(avg_loss)
+    #     recon_list.append(avg_recon)
+    #     kl_list.append(avg_kl)
+    #     print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
+
+    #     # EarlyStopping 機制
+    #     if avg_loss < best_loss:
+    #         best_loss = avg_loss
+    #         wait = 0
+    #         torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
+    #     else:
+    #         wait += 1
+    #         if wait >= patience:
+    #             print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+    #             break
+
+
+    # # 儲存模型
+    # os.makedirs('./ckpt/CVAE', exist_ok=True)
+    # torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
+    # print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
+
+    # # 顯示 loss 趨勢圖
+    # plt.figure(figsize=(8, 6))
+    # plt.plot(loss_list, label='Total Loss')
+    # plt.plot(recon_list, label='Reconstruction Loss')
+    # plt.plot(kl_list, label='KL Loss')
+    # plt.xlabel('Epoch')
+    # plt.ylabel('Loss')
+    # plt.title('CVAE Loss Trend')
+    # plt.legend()
+    # plt.grid()
+    # plt.show()
+
+    # # 載入最佳模型權重
+    # model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_best.pth", map_location=device))
+    # model.eval()
+
+    # # 預測此cluster所有 <147000 的 uid
+    # results = []
+    # test_df = pd.read_csv(f'./Training_Testing_Data/A_x_test.csv')
+    # for idx, uid in enumerate(valid_uid_list):
+    #     if uid > 147000:
+    #         break
+    #     user_train_df = raw_train_df[raw_train_df['uid'] == uid]
+    #     user_test_df = test_df[test_df['uid'] == uid]
+    #     if len(user_test_df) == 0:
+    #         continue
+    #     future_traj = generate_future_trajectory(model, user_train_df, user_test_df, uid, device)
+    #     # future_traj shape: (gen_len, 2)
+    #     for i, row in enumerate(future_traj):
+    #         d = int(user_test_df.iloc[i]['d'])
+    #         t = int(user_test_df.iloc[i]['t'])
+    #         x = int(row[0])
+    #         y = int(row[1])
+    #         results.append([uid, d, t, x, y])
+    #     print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
+    
+    # # 轉成 DataFrame 並輸出
+    # pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
+    # os.makedirs('./Predictions/CVAE', exist_ok=True)
+    # pred_df.to_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv', index=False)
+    # print("已輸出預測結果至 ./Predictions/CVAE/A_x_cvae_pred_cluster1.csv")
+
+
+    # # 計算 geobleu 分數
+    # def Evaluation(generated_data_input, reference_data_input, valid=False, city_name=None, raw_data_path=None):
+    #     # 檢查生成的資料是否符合規範
+    #     if valid:
+    #         validator.main(city_name, raw_data_path, generated_data_input)
+
+    #     # 讀取生成與參考資料
+    #     if isinstance(generated_data_input, pd.DataFrame):
+    #         generated_df = generated_data_input
+
+    #     elif isinstance(generated_data_input, str):
+    #         generated_df = pd.read_csv(generated_data_input, header=0, dtype=int)
+
+    #     else:
+    #         raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
+        
+    #     if isinstance(reference_data_input, pd.DataFrame):
+    #         reference_df = reference_data_input
+ 
+    #     elif isinstance(reference_data_input, str):
+    #         reference_df = pd.read_csv(reference_data_input, header=0, dtype=int)
+
+    #     else:
+    #         raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
+        
+    #     # 檢查有哪些uid要check
+    #     valid_uid_list = generated_df['uid'].unique()
+    #     print(f'要檢查的UID數量: {len(valid_uid_list)}')
+
+    #     # 計算每個 uid GEO-BLEU 和 dtw分數
+    #     GEOBLEU_scores = []
+    #     DTW_scores = []
+    #     for idx, uid in enumerate(valid_uid_list):
+    #         gen_user = generated_df[generated_df['uid'] == uid]
+    #         ref_user = reference_df[reference_df['uid'] == uid]
+
+    #         gen_traj = gen_user[['d', 't', 'x', 'y']].to_records(index=False)
+    #         ref_traj = ref_user[['d', 't', 'x', 'y']].to_records(index=False)
+    #         gen_traj = [tuple(row) for row in gen_traj]
+    #         ref_traj = [tuple(row) for row in ref_traj]
+
+    #         # GEOBLEU_score
+    #         GEOBLEU_score = geobleu.calc_geobleu_single(gen_traj, ref_traj)
+    #         GEOBLEU_scores.append(GEOBLEU_score)
+
+    #         # dtw
+    #         DTW_score = geobleu.calc_dtw_single(gen_traj, ref_traj)
+    #         DTW_scores.append(DTW_score)
+
+    #         print(f"{idx}/{len(valid_uid_list)}人--uid={uid}", end='\r')
+
+    #     final_GEOBLEU_score = sum(GEOBLEU_scores) / len(GEOBLEU_scores) if GEOBLEU_scores else 0.0
+    #     final_DTW_score = sum(DTW_scores) / len(DTW_scores) if DTW_scores else 0.0
+
+    #     return final_GEOBLEU_score, final_DTW_score
+
+    # final_GEOBLEU_score, final_DTW_score = Evaluation(
+    # generated_data_input = f'./Predictions/CVAE/A_x_cvae_pred_cluster1.csv',
+    # reference_data_input = test_df,
+    # )
+    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+
     # mode vs. CVAE 輸出scatter比較
     mode_pred_df = pd.read_csv('./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv')
     cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
@@ -273,226 +486,56 @@ if __name__ == "__main__":
 
     # 使用方式
     plot_top10_ratio_compare_single_uid_by_gt(mode_pred_df, gt_df, cvae_pred_df, uid=valid_uid_list[0])
-    
 
-    # # 資料準備
-    # raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
-    # raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
-    # raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
-    # raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
-    # raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
-    # valid_uid_list = raw_cluster_df[raw_cluster_df['cluster'] == 1]['uid'].unique().tolist()
-    # valid_uid_list = valid_uid_list
-    # print(f"有效的使用者數量: {len(valid_uid_list)}")
+    # 把GT, mode, cvae的x,y拉出來看時間線段上的重合性
+    def plot_x_y_sequence_compare(uid, mode_df, cvae_df, gt_df):
+        # 依照時間排序
+        mode_user = mode_df[mode_df['uid'] == uid].sort_values(['d', 't'])
+        cvae_user = cvae_df[cvae_df['uid'] == uid].sort_values(['d', 't'])
+        gt_user = gt_df[gt_df['uid'] == uid].sort_values(['d', 't'])
 
+        fig, axes = plt.subplots(2, 2, figsize=(18, 12), sharex=True)
 
-    # # 模型初始化
-    # input_dim = 2 # 目前僅考慮 x, y
-    # latent_dim = 64 # 潛在空間維度
-    # uid_dim = max(valid_uid_list) + 1
-    # uid_embed_dim = 128
-    # hidden_dim = 256
-    # batch_size = 1024
-    # max_len = 550
-    # num_layers = 1
-    # dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
-    # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, num_layers, dropout=0.3).to(device)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        # 左上：x的mode和gt
+        axes[0, 0].plot(mode_user['x'].values, '-o', label='Mode', color='red', alpha=0.7)
+        axes[0, 0].plot(gt_user['x'].values, '-o', label='GT', color='green', alpha=0.7)
+        axes[0, 0].set_title(f'UID {uid} x 時序 (Mode vs GT)')
+        axes[0, 0].set_ylabel('x')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True)
 
-    # # 訓練迴圈 + EarlyStopping
-    # epochs = 50000
-    # patience = 100  # 多少 epoch 沒改善就停止
-    # best_loss = float('inf')
-    # wait = 0
-    # loss_list = []
-    # recon_list = []
-    # kl_list = []
-    # for epoch in range(epochs):
-    #     # KL annealing: 10000個epoch內從0線性增到1
-    #     beta = min(1.0, epoch / 10000)
-    #     model.train()
-    #     total_loss = 0
-    #     total_recon = 0
-    #     total_kl = 0
-    #     for x, mask, lengths, uid, t, working_day, weights, x_true, y_true in dataloader:
-    #         x = x.to(device)
-    #         mask = mask.to(device)
-    #         t = t.to(device)
-    #         working_day = working_day.long().to(device)
-    #         uid = torch.tensor(uid, dtype=torch.long).to(device)
-    #         weights = weights.to(device)
-    #         x_true = x_true.to(device)
-    #         y_true = y_true.to(device)
-    #         optimizer.zero_grad()
-    #         x_logits, y_logits, mu, logvar = model(x, uid, t, working_day, mask)
-    #         loss, recon_loss, kl_loss = cvae_loss(x_logits, y_logits, x_true, y_true, mu, logvar, mask, weights, beta=beta)
-    #         loss.backward()
-    #         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 加上梯度裁剪
-    #         optimizer.step()
-    #         total_loss += loss.item()
-    #         total_recon += recon_loss.item()
-    #         total_kl += kl_loss.item()
-    #     avg_loss = total_loss / len(dataloader)
-    #     avg_recon = total_recon / len(dataloader)
-    #     avg_kl = total_kl / len(dataloader)
-    #     loss_list.append(avg_loss)
-    #     recon_list.append(avg_recon)
-    #     kl_list.append(avg_kl)
-    #     print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
+        # 左下：x的cvae和gt
+        axes[1, 0].plot(cvae_user['x'].values, '-o', label='CVAE', color='blue', alpha=0.7)
+        axes[1, 0].plot(gt_user['x'].values, '-o', label='GT', color='green', alpha=0.7)
+        axes[1, 0].set_title(f'UID {uid} x 時序 (CVAE vs GT)')
+        axes[1, 0].set_xlabel('時間點')
+        axes[1, 0].set_ylabel('x')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True)
 
-    #     # EarlyStopping 機制
-    #     if avg_loss < best_loss:
-    #         best_loss = avg_loss
-    #         wait = 0
-    #         torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
-    #     else:
-    #         wait += 1
-    #         if wait >= patience:
-    #             print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
-    #             break
+        # 右上：y的mode和gt
+        axes[0, 1].plot(mode_user['y'].values, '-o', label='Mode', color='red', alpha=0.7)
+        axes[0, 1].plot(gt_user['y'].values, '-o', label='GT', color='green', alpha=0.7)
+        axes[0, 1].set_title(f'UID {uid} y 時序 (Mode vs GT)')
+        axes[0, 1].set_ylabel('y')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True)
 
+        # 右下：y的cvae和gt
+        axes[1, 1].plot(cvae_user['y'].values, '-o', label='CVAE', color='blue', alpha=0.7)
+        axes[1, 1].plot(gt_user['y'].values, '-o', label='GT', color='green', alpha=0.7)
+        axes[1, 1].set_title(f'UID {uid} y 時序 (CVAE vs GT)')
+        axes[1, 1].set_xlabel('時間點')
+        axes[1, 1].set_ylabel('y')
+        axes[1, 1].legend()
+        axes[1, 1].grid(True)
 
-    # # 儲存模型
-    # os.makedirs('./ckpt/CVAE', exist_ok=True)
-    # torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
-    # print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
+        plt.tight_layout()
+        plt.show()
 
-    # # 顯示 loss 趨勢圖
-    # plt.figure(figsize=(8, 6))
-    # plt.plot(loss_list, label='Total Loss')
-    # plt.plot(recon_list, label='Reconstruction Loss')
-    # plt.plot(kl_list, label='KL Loss')
-    # plt.xlabel('Epoch')
-    # plt.ylabel('Loss')
-    # plt.title('CVAE Loss Trend')
-    # plt.legend()
-    # plt.grid()
-    # plt.show()
-
-    # # 載入最佳模型權重
-    # model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_best.pth", map_location=device))
-    # model.eval()
-
-    # # 測試生成其中一個使用者的未來軌跡
-    # target_uid = valid_uid_list[0]
-    # user_train_df = raw_train_df[raw_train_df['uid'] == target_uid]
-    # test_df = pd.read_csv(f'./Training_Testing_Data/A_x_test.csv')
-    # user_test_df = test_df[test_df['uid'] == target_uid]
-    # future_traj = generate_future_trajectory(model, 
-    #                                          user_train_df, 
-    #                                          user_test_df,
-    #                                          target_uid, 
-    #                                          device)
-    # print("生成第61~75天軌跡（x, y）：")
-    # for i, row in enumerate(future_traj):
-    #     t = int(user_test_df.iloc[i]['t'])
-    #     d = int(user_test_df.iloc[i]['d'])
-    #     # 若有 working_day、delta_t 欄位也可一併取出
-    #     print(f"Day{d}, t={t}, x={int(row[0])}, y={int(row[1])}, uid:{target_uid}")
-
-
-    # # 可視化比較
-    # true_traj = user_test_df[['x', 'y']].values  # 真實第61~75天
-    # gen_traj = future_traj[:, :2]                # 生成第61~75天
-
-    # plt.figure(figsize=(8, 6))
-    # plt.scatter(true_traj[:, 0], true_traj[:, 1], label='True', color='blue', marker='o', alpha=0.5, s=3)
-    # plt.scatter(gen_traj[:, 0], gen_traj[:, 1], label='Generated', color='red', marker='x', alpha=0.5, s=3)
-    # plt.title(f'UID {target_uid} 第61~75天軌跡比較')
-    # plt.xlabel('x')
-    # plt.ylabel('y')
-    # plt.gca().invert_yaxis()  # y軸反轉
-    # plt.legend()
-    # plt.grid()
-    # plt.show()
-
-    # # 預測此cluster所有 <147000 的 uid
-    # results = []
-    # test_df = pd.read_csv(f'./Training_Testing_Data/A_x_test.csv')
-    # for idx, uid in enumerate(valid_uid_list):
-    #     if uid > 147000:
-    #         break
-    #     user_train_df = raw_train_df[raw_train_df['uid'] == uid]
-    #     user_test_df = test_df[test_df['uid'] == uid]
-    #     if len(user_test_df) == 0:
-    #         continue
-    #     future_traj = generate_future_trajectory(model, user_train_df, user_test_df, uid, device)
-    #     # future_traj shape: (gen_len, 2)
-    #     for i, row in enumerate(future_traj):
-    #         d = int(user_test_df.iloc[i]['d'])
-    #         t = int(user_test_df.iloc[i]['t'])
-    #         x = int(row[0])
-    #         y = int(row[1])
-    #         results.append([uid, d, t, x, y])
-    #     print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
-    
-    # # 轉成 DataFrame 並輸出
-    # pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
-    # os.makedirs('./Predictions/CVAE', exist_ok=True)
-    # pred_df.to_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv', index=False)
-    # print("已輸出預測結果至 ./Predictions/CVAE/A_x_cvae_pred_cluster1.csv")
-
-
-    # # 計算 geobleu 分數
-    # def Evaluation(generated_data_input, reference_data_input, valid=False, city_name=None, raw_data_path=None):
-    #     # 檢查生成的資料是否符合規範
-    #     if valid:
-    #         validator.main(city_name, raw_data_path, generated_data_input)
-
-    #     # 讀取生成與參考資料
-    #     if isinstance(generated_data_input, pd.DataFrame):
-    #         generated_df = generated_data_input
-
-    #     elif isinstance(generated_data_input, str):
-    #         generated_df = pd.read_csv(generated_data_input, header=0, dtype=int)
-
-    #     else:
-    #         raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
-        
-    #     if isinstance(reference_data_input, pd.DataFrame):
-    #         reference_df = reference_data_input
- 
-    #     elif isinstance(reference_data_input, str):
-    #         reference_df = pd.read_csv(reference_data_input, header=0, dtype=int)
-
-    #     else:
-    #         raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
-        
-    #     # 檢查有哪些uid要check
-    #     valid_uid_list = generated_df['uid'].unique()
-    #     print(f'要檢查的UID數量: {len(valid_uid_list)}')
-
-    #     # 計算每個 uid GEO-BLEU 和 dtw分數
-    #     GEOBLEU_scores = []
-    #     DTW_scores = []
-    #     for idx, uid in enumerate(valid_uid_list):
-    #         gen_user = generated_df[generated_df['uid'] == uid]
-    #         ref_user = reference_df[reference_df['uid'] == uid]
-
-    #         gen_traj = gen_user[['d', 't', 'x', 'y']].to_records(index=False)
-    #         ref_traj = ref_user[['d', 't', 'x', 'y']].to_records(index=False)
-    #         gen_traj = [tuple(row) for row in gen_traj]
-    #         ref_traj = [tuple(row) for row in ref_traj]
-
-    #         # GEOBLEU_score
-    #         GEOBLEU_score = geobleu.calc_geobleu_single(gen_traj, ref_traj)
-    #         GEOBLEU_scores.append(GEOBLEU_score)
-
-    #         # dtw
-    #         DTW_score = geobleu.calc_dtw_single(gen_traj, ref_traj)
-    #         DTW_scores.append(DTW_score)
-
-    #         print(f"{idx}/{len(valid_uid_list)}人--uid={uid}", end='\r')
-
-    #     final_GEOBLEU_score = sum(GEOBLEU_scores) / len(GEOBLEU_scores) if GEOBLEU_scores else 0.0
-    #     final_DTW_score = sum(DTW_scores) / len(DTW_scores) if DTW_scores else 0.0
-
-    #     return final_GEOBLEU_score, final_DTW_score
-
-    # final_GEOBLEU_score, final_DTW_score = Evaluation(
-    # generated_data_input = f'./Predictions/CVAE/A_x_cvae_pred_cluster1.csv',
-    # reference_data_input = test_df,
-    # )
-    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    valid_uid_list = mode_pred_df['uid'].unique().tolist()
+    for i in range(10):
+        plot_x_y_sequence_compare(uid=valid_uid_list[i],
+                                    mode_df=mode_pred_df,
+                                    cvae_df=cvae_pred_df,
+                                    gt_df=gt_df)
