@@ -211,7 +211,7 @@ if __name__ == "__main__":
     raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
     raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
-    valid_uid_list = raw_cluster_df[raw_cluster_df['cluster'] == 1]['uid'].unique().tolist()
+    valid_uid_list = raw_cluster_df[raw_cluster_df['cluster'] == 0]['uid'].unique().tolist() #!!!!!!!!!!!!
     valid_uid_list = valid_uid_list
     print(f"有效的使用者數量: {len(valid_uid_list)}")
 
@@ -243,8 +243,8 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # 訓練迴圈 + EarlyStopping
-    epochs = 10000
-    patience = 250  # 多少 epoch 沒改善就停止
+    epochs = 20000
+    patience = 200  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
@@ -309,7 +309,7 @@ if __name__ == "__main__":
     plt.show()
 
     # 載入最佳模型權重
-    model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_classv4.4_h1024l1024uid1024.pth", map_location=device))
+    model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_best.pth", map_location=device))
     model.eval()
     temperature = 1.0
     top_p = 0.5
@@ -343,8 +343,8 @@ if __name__ == "__main__":
     # 轉成 DataFrame 並輸出
     pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
     os.makedirs('./Predictions/CVAE', exist_ok=True)
-    pred_df.to_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv', index=False)
-    print("已輸出預測結果至 ./Predictions/CVAE/A_x_cvae_pred_cluster1.csv")
+    pred_df.to_csv('./Predictions/CVAE/A_x_cvae_pred_cluster0.csv', index=False)
+    print("已輸出預測結果至 ./Predictions/CVAE/A_x_cvae_pred_cluster0.csv")
 
 
     # 計算 geobleu 分數
@@ -410,8 +410,8 @@ if __name__ == "__main__":
     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # mode vs. CVAE 輸出scatter比較
-    mode_pred_df = pd.read_csv('./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
+    mode_pred_df = pd.read_csv('./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster0.csv')
     gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
     valid_uid_list = mode_pred_df['uid'].unique().tolist()
     valid_uid_list =valid_uid_list[:5]
