@@ -931,44 +931,44 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
-    # # 檢查同一個cluster分數-->Per_User_Per_t_Mode_working_day_modify
-    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
-    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
-    # feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
-    # cluster_df = pd.read_csv('./Stability/A_activity_space.csv', header=0)
+    # 檢查同一個cluster分數-->Per_User_Per_t_Mode_working_day_modify
+    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
+    feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
+    cluster_df = pd.read_csv('./Stability/A_activity_space.csv', header=0)
 
-    # valid_uid_list = cluster_df[(cluster_df['cluster'] == 0) & (cluster_df['uid'] <= 147000)]['uid'].unique()
-    # print(f'有效的使用者ID數量: {len(valid_uid_list)}')
-    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
-    # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
-    #         feature_df = feature_df,
-    #         valid_uid_list = valid_uid_list,
-    #         output_name=f'A_x_cluster0_modify',
-    #         early_stop=150000
-    #     )
+    valid_uid_list = cluster_df[(cluster_df['cluster'] == 1) & (cluster_df['uid'] <= 147000)]['uid'].unique()
+    print(f'有效的使用者ID數量: {len(valid_uid_list)}')
+    std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+    std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
+            feature_df = feature_df,
+            valid_uid_list = valid_uid_list,
+            output_name=f'A_x_cluster1_modify',
+            early_stop=150000
+        )
 
-    # final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-    #     generated_data_input = f'./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv',
-    #     reference_data_input = raw_test_data_df,
-    # )
-    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+        generated_data_input = f'./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv',
+        reference_data_input = raw_test_data_df,
+    )
+    print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
-    # # 可視化比較
-    # target_uid = valid_uid_list[0]
-    # gen_df = pd.read_csv(f'./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv', header=0)
-    # user_test_df = raw_test_data_df[raw_test_data_df['uid'] == target_uid]
-    # future_traj = gen_df[gen_df['uid'] == target_uid][['x', 'y']].values  
-    # true_traj = user_test_df[['x', 'y']].values  # 真實第61~75天
+    # 可視化比較
+    target_uid = valid_uid_list[0]
+    gen_df = pd.read_csv(f'./Predictions/A_x_cluster1_modify_Per_User_Per_t_Mode_working_day_modify.csv', header=0)
+    user_test_df = raw_test_data_df[raw_test_data_df['uid'] == target_uid]
+    future_traj = gen_df[gen_df['uid'] == target_uid][['x', 'y']].values  
+    true_traj = user_test_df[['x', 'y']].values  # 真實第61~75天
 
-    # plt.figure(figsize=(8, 6))
-    # plt.scatter(true_traj[:, 0], true_traj[:, 1], label='True', color='blue', marker='o', alpha=0.5, s=3)
-    # plt.scatter(future_traj[:, 0], future_traj[:, 1], label='Generated', color='red', marker='x', alpha=0.5, s=3)
-    # plt.title(f'UID {target_uid} 第61~75天軌跡比較')
-    # plt.xlabel('x')
-    # plt.ylabel('y')
-    # plt.legend()
-    # plt.grid()
-    # plt.show()
+    plt.figure(figsize=(8, 6))
+    plt.scatter(true_traj[:, 0], true_traj[:, 1], label='True', color='blue', marker='o', alpha=0.5, s=3)
+    plt.scatter(future_traj[:, 0], future_traj[:, 1], label='Generated', color='red', marker='x', alpha=0.5, s=3)
+    plt.title(f'UID {target_uid} 第61~75天軌跡比較')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.legend()
+    plt.grid()
+    plt.show()
 
     # # cityA的3000人前45天和後15天的比較，並計算每個人的geobleu和dtw分數
     # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
@@ -1024,113 +1024,113 @@ if __name__ == "__main__":
 
    
 
-    # 看這3000人的分數及挑出特定幾人看分布與軌跡
-    # 先依據geo_bleu sorted
-    score_df = pd.read_csv(f'./Scores/A_y_3000_45vs15_scores.csv', header=0)
-    score_df = score_df.sort_values(by='GEOBLEU_score', ascending=False)
-    print(score_df.head(10))
-    print(score_df.tail(10))
-    top_10_uid = score_df.head(10)['uid'].tolist()
-    tail_10_uid = score_df.tail(10)['uid'].tolist()  
+    # # 看這3000人的分數及挑出特定幾人看分布與軌跡
+    # # 先依據geo_bleu sorted
+    # score_df = pd.read_csv(f'./Scores/A_y_3000_45vs15_scores.csv', header=0)
+    # score_df = score_df.sort_values(by='GEOBLEU_score', ascending=False)
+    # print(score_df.head(10))
+    # print(score_df.tail(10))
+    # top_10_uid = score_df.head(10)['uid'].tolist()
+    # tail_10_uid = score_df.tail(10)['uid'].tolist()  
 
-    geobleu_sorted = score_df.sort_values(by='GEOBLEU_score', ascending=False).reset_index(drop=True)
-    median_idx = len(geobleu_sorted) // 2
-    start_idx = max(median_idx - 5, 0)
-    end_idx = min(median_idx + 5, len(geobleu_sorted))
-    median_10_uid = geobleu_sorted.iloc[start_idx:end_idx]['uid'].tolist()
-    print(score_df[score_df['uid'].isin(median_10_uid)])
+    # geobleu_sorted = score_df.sort_values(by='GEOBLEU_score', ascending=False).reset_index(drop=True)
+    # median_idx = len(geobleu_sorted) // 2
+    # start_idx = max(median_idx - 5, 0)
+    # end_idx = min(median_idx + 5, len(geobleu_sorted))
+    # median_10_uid = geobleu_sorted.iloc[start_idx:end_idx]['uid'].tolist()
+    # print(score_df[score_df['uid'].isin(median_10_uid)])
 
-    # mode vs. gt 輸出scatter比較
-    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
-    train_data_df = raw_train_data_df[raw_train_data_df['d'] <= 45].copy()
-    test_data_df = raw_train_data_df[raw_train_data_df['d'] > 45].copy()   
+    # # mode vs. gt 輸出scatter比較
+    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    # train_data_df = raw_train_data_df[raw_train_data_df['d'] <= 45].copy()
+    # test_data_df = raw_train_data_df[raw_train_data_df['d'] > 45].copy()   
     
-    mode_pred_df = pd.read_csv('./Predictions/A_y_3000_45vs15_Per_User_Per_t_Mode_working_day_modify.csv')
-    gt_df = test_data_df
-    valid_uid_list = tail_10_uid[5:]
+    # mode_pred_df = pd.read_csv('./Predictions/A_y_3000_45vs15_Per_User_Per_t_Mode_working_day_modify.csv')
+    # gt_df = test_data_df
+    # valid_uid_list = tail_10_uid[5:]
 
-    fig, axes = plt.subplots(2, len(valid_uid_list), figsize=(20,20))
-    for i, uid in enumerate(valid_uid_list):
-        axes[0, i].scatter(mode_pred_df[mode_pred_df['uid'] == uid]['x'],
-                        mode_pred_df[mode_pred_df['uid'] == uid]['y'],
-                        label='Mode', alpha=0.8, s=10, color='red', marker='x')
-        axes[0, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
-                gt_df[gt_df['uid'] == uid]['y'],
-                label='gt', alpha=0.3, s=3, color='green')
-        axes[0, i].set_title(f'UID {uid} Mode')
-        axes[0, i].set_xlabel('x')
-        axes[0, i].set_ylabel('y')
-        axes[0, i].set_aspect('equal')
-        axes[0, i].set_xlim(1, 200)
-        axes[0, i].set_ylim(1, 200)
-        axes[0, i].grid(True)
-        axes[0, i].invert_yaxis()
-        axes[0, i].legend()
+    # fig, axes = plt.subplots(2, len(valid_uid_list), figsize=(20,20))
+    # for i, uid in enumerate(valid_uid_list):
+    #     axes[0, i].scatter(mode_pred_df[mode_pred_df['uid'] == uid]['x'],
+    #                     mode_pred_df[mode_pred_df['uid'] == uid]['y'],
+    #                     label='Mode', alpha=0.8, s=10, color='red', marker='x')
+    #     axes[0, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+    #             gt_df[gt_df['uid'] == uid]['y'],
+    #             label='gt', alpha=0.3, s=3, color='green')
+    #     axes[0, i].set_title(f'UID {uid} Mode')
+    #     axes[0, i].set_xlabel('x')
+    #     axes[0, i].set_ylabel('y')
+    #     axes[0, i].set_aspect('equal')
+    #     axes[0, i].set_xlim(1, 200)
+    #     axes[0, i].set_ylim(1, 200)
+    #     axes[0, i].grid(True)
+    #     axes[0, i].invert_yaxis()
+    #     axes[0, i].legend()
 
-        axes[1, i].scatter(train_data_df[train_data_df['uid'] == uid]['x'],
-                train_data_df[train_data_df['uid'] == uid]['y'],
-                label='45gt', alpha=0.5, s=5, color='blue')
-        axes[1, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
-                gt_df[gt_df['uid'] == uid]['y'],
-                label='15gt', alpha=1, s=5, color='green')
-        axes[1, i].set_title(f'UID {uid} CVAE')
-        axes[1, i].set_xlabel('x')  
-        axes[1, i].set_ylabel('y')
-        axes[1, i].set_aspect('equal')
-        axes[1, i].set_xlim(1, 200)
-        axes[1, i].set_ylim(1, 200)
-        axes[1, i].grid(True)
-        axes[1, i].invert_yaxis()
-        axes[1, i].legend()
+    #     axes[1, i].scatter(train_data_df[train_data_df['uid'] == uid]['x'],
+    #             train_data_df[train_data_df['uid'] == uid]['y'],
+    #             label='45gt', alpha=0.5, s=5, color='blue')
+    #     axes[1, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+    #             gt_df[gt_df['uid'] == uid]['y'],
+    #             label='15gt', alpha=1, s=5, color='green')
+    #     axes[1, i].set_title(f'UID {uid} CVAE')
+    #     axes[1, i].set_xlabel('x')  
+    #     axes[1, i].set_ylabel('y')
+    #     axes[1, i].set_aspect('equal')
+    #     axes[1, i].set_xlim(1, 200)
+    #     axes[1, i].set_ylim(1, 200)
+    #     axes[1, i].grid(True)
+    #     axes[1, i].invert_yaxis()
+    #     axes[1, i].legend()
 
-    plt.tight_layout()
-    plt.show()
+    # plt.tight_layout()
+    # plt.show()
 
-    # 依據標準差看分數
-    raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
-    thresholds = [0,9999]
-    for i in range(len(thresholds) - 1):
-        lower = thresholds[i]
-        upper = thresholds[i + 1]
-        filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
-        valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
-        print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
+    # # 依據標準差看分數
+    # raw_std_df = pd.read_csv('./Stability/A_ytrain_working_day_stability.csv', header=0)
+    # thresholds = [0,9999]
+    # for i in range(len(thresholds) - 1):
+    #     lower = thresholds[i]
+    #     upper = thresholds[i + 1]
+    #     filter_std_df = raw_std_df[(raw_std_df['x_std_mean'] >= lower) | (raw_std_df['y_std_mean'] >= lower)]
+    #     valid_uid_list = filter_std_df[(filter_std_df['x_std_mean'] < upper) & (filter_std_df['y_std_mean'] < upper)]['uid'].unique()
+    #     print(f"x|y std >= {lower},x&y std < {upper} 有效的使用者ID數量: {len(valid_uid_list)}")
 
-        geobleu_scores = score_df[score_df['uid'].isin(valid_uid_list)]['GEOBLEU_score'].mean()
-        dtw_scores = score_df[score_df['uid'].isin(valid_uid_list)]['DTW_score'].mean()
-        print(geobleu_scores, dtw_scores, '\n')
+    #     geobleu_scores = score_df[score_df['uid'].isin(valid_uid_list)]['GEOBLEU_score'].mean()
+    #     dtw_scores = score_df[score_df['uid'].isin(valid_uid_list)]['DTW_score'].mean()
+    #     print(geobleu_scores, dtw_scores, '\n')
 
-    # 看特定人的x,y時間序列圖，把GT, mode 的x,y拉出來看時間線段上的重合性
-    def plot_x_y_sequence_compare(uid, mode_df , gt_df):
-        # 依照時間排序
-        mode_user = mode_df[mode_df['uid'] == uid].sort_values(['d', 't'])
-        gt_user = gt_df[gt_df['uid'] == uid].sort_values(['d', 't'])
+    # # 看特定人的x,y時間序列圖，把GT, mode 的x,y拉出來看時間線段上的重合性
+    # def plot_x_y_sequence_compare(uid, mode_df , gt_df):
+    #     # 依照時間排序
+    #     mode_user = mode_df[mode_df['uid'] == uid].sort_values(['d', 't'])
+    #     gt_user = gt_df[gt_df['uid'] == uid].sort_values(['d', 't'])
 
-        fig, axes = plt.subplots(1, 2, figsize=(20, 6), sharex=True)
+    #     fig, axes = plt.subplots(1, 2, figsize=(20, 6), sharex=True)
 
-        # 左上：x的mode和gt
-        axes[0].plot(mode_user['x'].values, '-o', label='Mode', color='red', alpha=0.7)
-        axes[0].plot(gt_user['x'].values, '-o', label='GT', color='green', alpha=0.7)
-        axes[0].set_title(f'UID {uid} x 時序 (Mode vs GT)')
-        axes[0].set_ylabel('x')
-        axes[0].legend()
-        axes[0].grid(True)
+    #     # 左上：x的mode和gt
+    #     axes[0].plot(mode_user['x'].values, '-o', label='Mode', color='red', alpha=0.7)
+    #     axes[0].plot(gt_user['x'].values, '-o', label='GT', color='green', alpha=0.7)
+    #     axes[0].set_title(f'UID {uid} x 時序 (Mode vs GT)')
+    #     axes[0].set_ylabel('x')
+    #     axes[0].legend()
+    #     axes[0].grid(True)
 
-        # 右上：y的mode和gt
-        axes[1].plot(mode_user['y'].values, '-o', label='Mode', color='red', alpha=0.7)
-        axes[1].plot(gt_user['y'].values, '-o', label='GT', color='green', alpha=0.7)
-        axes[1].set_title(f'UID {uid} y 時序 (Mode vs GT)')
-        axes[1].set_ylabel('y')
-        axes[1].legend()
-        axes[1].grid(True)
+    #     # 右上：y的mode和gt
+    #     axes[1].plot(mode_user['y'].values, '-o', label='Mode', color='red', alpha=0.7)
+    #     axes[1].plot(gt_user['y'].values, '-o', label='GT', color='green', alpha=0.7)
+    #     axes[1].set_title(f'UID {uid} y 時序 (Mode vs GT)')
+    #     axes[1].set_ylabel('y')
+    #     axes[1].legend()
+    #     axes[1].grid(True)
 
-        plt.tight_layout()
-        plt.show()
+    #     plt.tight_layout()
+    #     plt.show()
 
-    valid_uid_list = mode_pred_df['uid'].unique().tolist()
-    plot_x_y_sequence_compare(uid=149254,
-                                mode_df=mode_pred_df,
-                                gt_df=gt_df)
+    # valid_uid_list = mode_pred_df['uid'].unique().tolist()
+    # plot_x_y_sequence_compare(uid=149254,
+    #                             mode_df=mode_pred_df,
+    #                             gt_df=gt_df)
 
     # 不同std分類對分數影響-->Per_User_Per_t_Mode_working_day_dynamic
     # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
