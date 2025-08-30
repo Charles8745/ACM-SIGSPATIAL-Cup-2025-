@@ -21,20 +21,20 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 2. 改成一次預測一組[x,y]
 3. 計算有效點位
 """
-# 統計所有有效點位 (x, y)
-raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
-raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
-raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
-xy_set = set()
-for x, y in raw_train_df[['x', 'y']].values:
-    x = int(x)
-    y = int(y)
-    if 1 <= x <= 200 and 1 <= y <= 200:
-        xy_set.add((x, y))
-valid_xy_list = sorted(list(xy_set))
-xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
-N_valid = len(valid_xy_list)
-print(f"有效點位數量: {N_valid}")
+# # 統計所有有效點位 (x, y)
+# raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
+# raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
+# raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
+# xy_set = set()
+# for x, y in raw_train_df[['x', 'y']].values:
+#     x = int(x)
+#     y = int(y)
+#     if 1 <= x <= 200 and 1 <= y <= 200:
+#         xy_set.add((x, y))
+# valid_xy_list = sorted(list(xy_set))
+# xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
+# N_valid = len(valid_xy_list)
+# print(f"有效點位數量: {N_valid}")
 
 class TrajectoryDataset(Dataset):
     def __init__(self, df, uid_list, xy2idx, max_len=400):
@@ -206,14 +206,18 @@ if __name__ == "__main__":
     except Exception:
         pass
     # 資料準備
-    raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
-    raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
-    raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
+    # 資料準備 分前45後15
+    raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
+    raw_x_train_df = raw_x_train_df[raw_x_train_df['d'] <= 45]
+    # raw_y_train_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
+    # raw_train_df = pd.concat([raw_x_train_df, raw_y_train_df], ignore_index=True)
+    raw_train_df = raw_x_train_df
     raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
-    valid_uid_list = raw_cluster_df[raw_cluster_df['cluster'] == 0]['uid'].unique().tolist() #!!!!!!!!!!!!
-    valid_uid_list = valid_uid_list
-    print(f"有效的使用者數量: {len(valid_uid_list)}")
+
+    train_uids = raw_train_df["uid"].unique()
+    valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == 0) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist()
+    print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
     # 統計有效點位
     xy_set = set()
@@ -225,15 +229,16 @@ if __name__ == "__main__":
     valid_xy_list = sorted(list(xy_set))
     xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
     N_valid = len(valid_xy_list)
+    print(f"有效點位數量: {N_valid}")
 
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 1024 # 潛在空間維度
+    latent_dim = 512 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 1024
-    hidden_dim = 1024
-    batch_size = 128
+    uid_embed_dim = 128
+    hidden_dim = 512
+    batch_size = 512
     max_len = 550
     num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, xy2idx, max_len=max_len)
@@ -244,7 +249,7 @@ if __name__ == "__main__":
 
     # 訓練迴圈 + EarlyStopping
     epochs = 20000
-    patience = 200  # 多少 epoch 沒改善就停止
+    patience = 100  # 多少 epoch 沒改善就停止
     best_loss = float('inf')
     wait = 0
     loss_list = []
@@ -279,7 +284,7 @@ if __name__ == "__main__":
         loss_list.append(avg_loss)
         recon_list.append(avg_recon)
         kl_list.append(avg_kl)
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Recon: {avg_recon:.4f}, KL: {avg_kl:.4f}")
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
 
         if avg_loss < best_loss:
             best_loss = avg_loss
@@ -298,9 +303,7 @@ if __name__ == "__main__":
 
     # 顯示 loss 趨勢圖
     plt.figure(figsize=(8, 6))
-    plt.plot(loss_list, label='Total Loss')
-    # plt.plot(recon_list, label='Reconstruction Loss')
-    # plt.plot(kl_list, label='KL Loss')
+    plt.plot(loss_list[1000:], label='Total Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.title('CVAE Loss Trend')
@@ -314,11 +317,15 @@ if __name__ == "__main__":
     temperature = 1.0
     top_p = 0.5
 
-    # 預測此cluster所有 <147000 的 uid
+    # 預測此cluster所有 >147000 的 uid
     results = []
-    test_df = pd.read_csv(f'./Training_Testing_Data/A_x_test.csv')
+    # test_df = pd.read_csv(f'./Training_Testing_Data/A_x_test.csv')
+    test_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
+    test_df = test_df[test_df['d'] > 45]
+    mode_df = pd.read_csv(f'./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    valid_uid_list = mode_df['uid'].unique()
     for idx, uid in enumerate(valid_uid_list):
-        if uid > 147000:
+        if uid <= 147000:
             break
         user_train_df = raw_train_df[raw_train_df['uid'] == uid]
         user_test_df = test_df[test_df['uid'] == uid]
@@ -404,7 +411,7 @@ if __name__ == "__main__":
         return final_GEOBLEU_score, final_DTW_score
 
     final_GEOBLEU_score, final_DTW_score = Evaluation(
-    generated_data_input = f'./Predictions/CVAE/A_x_cvae_pred_cluster1.csv',
+    generated_data_input = f'./Predictions/CVAE/A_x_cvae_pred_cluster0.csv',
     reference_data_input = test_df,
     )
     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
@@ -412,7 +419,8 @@ if __name__ == "__main__":
     # mode vs. CVAE 輸出scatter比較
     mode_pred_df = pd.read_csv('./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv')
     cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster0.csv')
-    gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    # gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    gt_df = test_df
     valid_uid_list = mode_pred_df['uid'].unique().tolist()
     valid_uid_list =valid_uid_list[:5]
     fig, axes = plt.subplots(3, len(valid_uid_list), figsize=(20,12))
@@ -443,8 +451,8 @@ if __name__ == "__main__":
         axes[1, i].set_xlabel('x')  
         axes[1, i].set_ylabel('y')
         axes[1, i].set_aspect('equal')
-        axes[1, i].set_xlim(1, 100)
-        axes[1, i].set_ylim(1, 100)
+        axes[1, i].set_xlim(1, 200)
+        axes[1, i].set_ylim(1, 200)
         axes[1, i].grid(True)
         axes[1, i].invert_yaxis()
         axes[1, i].legend()
@@ -456,8 +464,8 @@ if __name__ == "__main__":
         axes[2, i].set_xlabel('x')  
         axes[2, i].set_ylabel('y')
         axes[2, i].set_aspect('equal')
-        axes[2, i].set_xlim(1, 100)
-        axes[2, i].set_ylim(1, 100)
+        axes[2, i].set_xlim(1, 200)
+        axes[2, i].set_ylim(1, 200)
         axes[2, i].grid(True)
         axes[2, i].invert_yaxis()
         axes[2, i].legend()
