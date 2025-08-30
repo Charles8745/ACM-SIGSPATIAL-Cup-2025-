@@ -12,12 +12,14 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
 
 # 分別讀取眾數結果和生成結果
-mode_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster1.csv')
-gen_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h2048l2048_cluster1.csv')
+mode_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_class_h1024l1024uid32layers1_cluster1_cityA.csv')
+gen_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h1024l1024uid32layers1_cluster1_cityA.csv')
 
 
 valid_uid_list = mode_pred_df['uid'].unique().tolist()
-gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+test_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
+gt_df = test_df[test_df['d'] > 45]
+# gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
 gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
 
 # 依據輸出結果做ensemble
@@ -27,8 +29,8 @@ def sigmoid_weight(dist, threshold=10, k=1):
     return 1 / (1 + np.exp(-k * (dist - threshold)))
 
 results = []
-threshold = 15
-k = 10  # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
+threshold = 10
+k = 15 # k 越大，曲線越陡，權重會在接近 threshold 時快速從 0 跳到 1（類似階梯函數）。
 for mode_row, gen_row in zip(mode_pred_df.itertuples(index=False), gen_pred_df.itertuples(index=False)):
     mode_x, mode_y = mode_row.x, mode_row.y
     gen_x, gen_y = gen_row.x, gen_row.y

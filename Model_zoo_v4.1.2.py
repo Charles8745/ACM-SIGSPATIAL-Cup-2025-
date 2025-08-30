@@ -196,7 +196,7 @@ if __name__ == "__main__":
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
 
     train_uids = raw_train_df["uid"].unique()
-    valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == 0) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist()
+    valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == 2) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!!!!!!
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
 
@@ -204,11 +204,11 @@ if __name__ == "__main__":
     input_dim = 2 # 目前僅考慮 x, y
     latent_dim = 1024 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 128
+    uid_embed_dim = 64
     hidden_dim = 1024
     batch_size = 512
     max_len = 550
-    num_layers = 3
+    num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -304,7 +304,7 @@ if __name__ == "__main__":
     # mode_df = pd.read_csv(f'./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv')
     test_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
     test_df = test_df[test_df['d'] > 45]
-    mode_df = pd.read_csv(f'./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    mode_df = pd.read_csv(f'./Predictions/A_y_cluster2_modify_Per_User_Per_t_Mode_working_day_modify.csv')
     valid_uid_list = mode_df['uid'].unique()
     for idx, uid in enumerate(valid_uid_list):
         if uid <= 147000:
@@ -327,8 +327,8 @@ if __name__ == "__main__":
     # 轉成 DataFrame 並輸出
     pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
     os.makedirs('./Predictions/CVAE', exist_ok=True)
-    pred_df.to_csv('./Predictions/CVAE/A_x_cvae_pred_cluster0.csv', index=False)
-    print("已輸出預測結果至 ./Predictions/CVAE/A_x_cvae_pred_cluster0.csv")
+    pred_df.to_csv('./Predictions/CVAE/A_y_cvae_pred_cluster2.csv', index=False)
+    print("已輸出預測結果至 ./Predictions/CVAE/A_y_cvae_pred_cluster2.csv")
 
 
     # 計算 geobleu 分數
@@ -388,14 +388,14 @@ if __name__ == "__main__":
         return final_GEOBLEU_score, final_DTW_score
 
     final_GEOBLEU_score, final_DTW_score = Evaluation(
-    generated_data_input = f'./Predictions/CVAE/A_x_cvae_pred_cluster0.csv',
+    generated_data_input = f'./Predictions/CVAE/A_y_cvae_pred_cluster2.csv',
     reference_data_input = test_df,
     )
     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # mode vs. CVAE 輸出scatter比較
-    mode_pred_df = pd.read_csv('./Predictions/A_x_cluster0_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_x_cvae_pred_cluster0.csv')
+    mode_pred_df = pd.read_csv('./Predictions/A_y_cluster2_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_y_cvae_pred_cluster2.csv')
     # gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
     gt_df = test_df
     valid_uid_list = mode_pred_df['uid'].unique().tolist()
