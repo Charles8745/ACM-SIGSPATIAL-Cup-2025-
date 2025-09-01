@@ -214,9 +214,10 @@ if __name__ == "__main__":
     raw_train_df = raw_x_train_df
     raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
+    cluster = 3
 
     train_uids = raw_train_df["uid"].unique()
-    valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == 2) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!
+    valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == cluster) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
     # 統計有效點位
@@ -236,80 +237,80 @@ if __name__ == "__main__":
     input_dim = 2 # 目前僅考慮 x, y
     latent_dim = 1024 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 36
+    uid_embed_dim = 20
     hidden_dim = 1024
     batch_size = 512
     max_len = 550
-    num_layers = 2
+    num_layers = 1
     dataset = TrajectoryDataset(raw_train_df, valid_uid_list, xy2idx, max_len=max_len)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, N_valid, num_layers, dropout=0.3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    # 訓練迴圈 + EarlyStopping
-    epochs = 20000
-    patience = 100  # 多少 epoch 沒改善就停止
-    best_loss = float('inf')
-    wait = 0
-    loss_list = []
-    recon_list = []
-    kl_list = []
-    for epoch in range(epochs):
-        beta = min(1.0, epoch / 10000)
-        model.train()
-        total_loss = 0
-        total_recon = 0
-        total_kl = 0
-        for x, mask, lengths, uid, t, working_day, weights, xy_idx in dataloader:
-            x = x.to(device)
-            mask = mask.to(device)
-            t = t.to(device)
-            working_day = working_day.long().to(device)
-            uid = torch.tensor(uid, dtype=torch.long).to(device)
-            weights = weights.to(device)
-            xy_idx = xy_idx.to(device)
-            optimizer.zero_grad()
-            xy_logits, mu, logvar = model(x, uid, t, working_day, mask)
-            loss, recon_loss, kl_loss = cvae_loss(xy_logits, xy_idx, mu, logvar, mask, weights, beta=beta)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-            total_loss += loss.item()
-            total_recon += recon_loss.item()
-            total_kl += kl_loss.item()
-        avg_loss = total_loss / len(dataloader)
-        avg_recon = total_recon / len(dataloader)
-        avg_kl = total_kl / len(dataloader)
-        loss_list.append(avg_loss)
-        recon_list.append(avg_recon)
-        kl_list.append(avg_kl)
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
+    # # 訓練迴圈 + EarlyStopping
+    # epochs = 20000
+    # patience = 100  # 多少 epoch 沒改善就停止
+    # best_loss = float('inf')
+    # wait = 0
+    # loss_list = []
+    # recon_list = []
+    # kl_list = []
+    # for epoch in range(epochs):
+    #     beta = min(1.0, epoch / 10000)
+    #     model.train()
+    #     total_loss = 0
+    #     total_recon = 0
+    #     total_kl = 0
+    #     for x, mask, lengths, uid, t, working_day, weights, xy_idx in dataloader:
+    #         x = x.to(device)
+    #         mask = mask.to(device)
+    #         t = t.to(device)
+    #         working_day = working_day.long().to(device)
+    #         uid = torch.tensor(uid, dtype=torch.long).to(device)
+    #         weights = weights.to(device)
+    #         xy_idx = xy_idx.to(device)
+    #         optimizer.zero_grad()
+    #         xy_logits, mu, logvar = model(x, uid, t, working_day, mask)
+    #         loss, recon_loss, kl_loss = cvae_loss(xy_logits, xy_idx, mu, logvar, mask, weights, beta=beta)
+    #         loss.backward()
+    #         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    #         optimizer.step()
+    #         total_loss += loss.item()
+    #         total_recon += recon_loss.item()
+    #         total_kl += kl_loss.item()
+    #     avg_loss = total_loss / len(dataloader)
+    #     avg_recon = total_recon / len(dataloader)
+    #     avg_kl = total_kl / len(dataloader)
+    #     loss_list.append(avg_loss)
+    #     recon_list.append(avg_recon)
+    #     kl_list.append(avg_kl)
+    #     print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
 
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            wait = 0
-            torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
-        else:
-            wait += 1
-            if wait >= patience:
-                print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
-                break
+    #     if avg_loss < best_loss:
+    #         best_loss = avg_loss
+    #         wait = 0
+    #         torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model_best.pth")
+    #     else:
+    #         wait += 1
+    #         if wait >= patience:
+    #             print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+    #             break
 
-    # 儲存模型
-    os.makedirs('./ckpt/CVAE', exist_ok=True)
-    torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
-    print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
+    # # 儲存模型
+    # os.makedirs('./ckpt/CVAE', exist_ok=True)
+    # torch.save(model.state_dict(), "./ckpt/CVAE/cvae_model.pth")
+    # print("模型已儲存至 ./ckpt/CVAE/cvae_model.pth")
 
-    # 顯示 loss 趨勢圖
-    plt.figure(figsize=(8, 6))
-    plt.plot(loss_list[1000:], label='Total Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('CVAE Loss Trend')
-    plt.legend()
-    plt.grid()
-    plt.show()
+    # # 顯示 loss 趨勢圖
+    # plt.figure(figsize=(8, 6))
+    # plt.plot(loss_list[1000:], label='Total Loss')
+    # plt.xlabel('Epoch')
+    # plt.ylabel('Loss')
+    # plt.title('CVAE Loss Trend')
+    # plt.legend()
+    # plt.grid()
+    # plt.show()
 
     # 載入最佳模型權重
     model.load_state_dict(torch.load("./ckpt/CVAE/cvae_model_best.pth", map_location=device))
@@ -322,10 +323,10 @@ if __name__ == "__main__":
     # test_df = pd.read_csv(f'./Training_Testing_Data/A_x_test.csv')
     test_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
     test_df = test_df[test_df['d'] > 45]
-    mode_df = pd.read_csv(f'./Predictions/A_y_cluster2_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    mode_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
     valid_uid_list = mode_df['uid'].unique()
     for idx, uid in enumerate(valid_uid_list):
-        if uid <= 147000:
+        if uid <= 27000:
             break
         user_train_df = raw_train_df[raw_train_df['uid'] == uid]
         user_test_df = test_df[test_df['uid'] == uid]
@@ -350,8 +351,8 @@ if __name__ == "__main__":
     # 轉成 DataFrame 並輸出
     pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
     os.makedirs('./Predictions/CVAE', exist_ok=True)
-    pred_df.to_csv('./Predictions/CVAE/A_y_cvae_pred_cluster2.csv', index=False)
-    print("已輸出預測結果至 ./Predictions/CVAE/A_y_cvae_pred_cluster2.csv")
+    pred_df.to_csv(f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv', index=False)
+    print(f"已輸出預測結果至 ./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv")
 
 
     # 計算 geobleu 分數
@@ -411,14 +412,14 @@ if __name__ == "__main__":
         return final_GEOBLEU_score, final_DTW_score
 
     final_GEOBLEU_score, final_DTW_score = Evaluation(
-    generated_data_input = f'./Predictions/CVAE/A_y_cvae_pred_cluster2.csv',
+    generated_data_input = f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv',
     reference_data_input = test_df,
     )
     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # mode vs. CVAE 輸出scatter比較
-    mode_pred_df = pd.read_csv('./Predictions/A_y_cluster2_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    cvae_pred_df = pd.read_csv('./Predictions/CVAE/A_y_cvae_pred_cluster2.csv')
+    mode_pred_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv')
     # gt_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv')
     gt_df = test_df
     valid_uid_list = mode_pred_df['uid'].unique().tolist()

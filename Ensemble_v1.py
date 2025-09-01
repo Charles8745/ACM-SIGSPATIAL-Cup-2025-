@@ -12,8 +12,8 @@ matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
 
 # 分別讀取眾數結果和生成結果
-mode_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_class_h1024l1024uid32layers1_cluster1_cityA.csv')
-gen_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h1024l1024uid32layers1_cluster1_cityA.csv')
+mode_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_class_h1024l1024uid40layers1_cluster2_cityA.csv')
+gen_pred_df = pd.read_csv('./Predictions/CVAE/cvae_model_reg_h2048l2048uid40layers3_cluster2_cityA.csv')
 
 
 valid_uid_list = mode_pred_df['uid'].unique().tolist()
