@@ -15,11 +15,7 @@ from torch.cuda.amp import autocast, GradScaler
 matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # 或 'SimHei'
 matplotlib.rcParams['axes.unicode_minus'] = False  # 正確顯示負號
 """
-預測方式改成分類預測
-調整輸出過於單一問題:
-1. 以機率抽樣取代 argmax（Temperature + Top-k / Top-p）
-2. 改成一次預測一組[x,y]
-3. 計算有效點位
+有些cluster人太多，分批訓練
 """
 # # 統計所有有效點位 (x, y)
 # raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/A_x_train.csv')
@@ -215,9 +211,13 @@ if __name__ == "__main__":
     raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
     cluster = 4
+    cluster_batch_i = 2
 
     train_uids = raw_train_df["uid"].unique()
     valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == cluster) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!
+    valid_uid_splits = np.array_split(valid_uid_list, 10)  # 分成十份，每份約10%，人數太多時使用
+    print(f"第{cluster_batch_i}份，有效UID數量: {len(valid_uid_splits[cluster_batch_i-1])}")
+    valid_uid_list = valid_uid_splits[cluster_batch_i-1] # 選擇第 i 份
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
     # 統計有效點位
@@ -235,10 +235,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 1024 # 潛在空間維度
+    latent_dim = 1400 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 512
-    hidden_dim = 1024
+    uid_embed_dim = 180
+    hidden_dim = 1400
     batch_size = 512
     max_len = 550
     num_layers = 1
@@ -324,9 +324,9 @@ if __name__ == "__main__":
     test_df = pd.read_csv(f'./Training_Testing_Data/A_y_train.csv')
     test_df = test_df[test_df['d'] > 45]
     mode_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    valid_uid_list = mode_df['uid'].unique()
+    valid_uid_list = valid_uid_splits[cluster_batch_i-1] # 選擇第 i 份
     for idx, uid in enumerate(valid_uid_list):
-        if uid <= 27000:
+        if uid <= 147000:
             break
         user_train_df = raw_train_df[raw_train_df['uid'] == uid]
         user_test_df = test_df[test_df['uid'] == uid]
@@ -351,8 +351,8 @@ if __name__ == "__main__":
     # 轉成 DataFrame 並輸出
     pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
     os.makedirs('./Predictions/CVAE', exist_ok=True)
-    pred_df.to_csv(f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv', index=False)
-    print(f"已輸出預測結果至 ./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv")
+    pred_df.to_csv(f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}_{cluster_batch_i}.csv', index=False)
+    print(f"已輸出預測結果至 ./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}_{cluster_batch_i}.csv")
 
 
     # 計算 geobleu 分數
@@ -412,17 +412,16 @@ if __name__ == "__main__":
         return final_GEOBLEU_score, final_DTW_score
 
     final_GEOBLEU_score, final_DTW_score = Evaluation(
-    generated_data_input = f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv',
+    generated_data_input = f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}_{cluster_batch_i}.csv',
     reference_data_input = test_df,
     )
     print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # mode vs. CVAE 輸出scatter比較
     mode_pred_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}.csv')
+    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/A_y_cvae_pred_cluster{cluster}_{cluster_batch_i}.csv')
     # gt_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv')
     gt_df = test_df
-    valid_uid_list = mode_pred_df['uid'].unique().tolist()
     valid_uid_list =valid_uid_list[:5]
     fig, axes = plt.subplots(3, len(valid_uid_list), figsize=(20,12))
     for i, uid in enumerate(valid_uid_list):

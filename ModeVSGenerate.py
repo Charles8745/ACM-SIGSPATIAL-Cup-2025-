@@ -73,21 +73,49 @@ def Evaluation(generated_data_input, reference_data_input, valid=False, city_nam
 """
 Mode3000人分數
 """
-result = []
-for cluster in cluster_list:
-    cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    result.append(cluster_df)
+# mode_result = []
+# for cluster in cluster_list:
+#     cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+#     mode_result.append(cluster_df)
 
-result_df = pd.concat(result, ignore_index=True).sort_values(by=['uid', 'd', 't']).reset_index(drop=True)
-valid_uid_list = result_df['uid'].unique()
-print(f'要檢查的UID數量: {len(valid_uid_list)}')
-gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
+# mode_result_df = pd.concat(mode_result, ignore_index=True).sort_values(by=['uid', 'd', 't']).reset_index(drop=True)
+# valid_uid_list = mode_result_df['uid'].unique()
+# print(f'要檢查的UID數量: {len(valid_uid_list)}')
+# gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
 
-final_GEOBLEU_score, final_DTW_score = Evaluation(
-    generated_data_input=result_df,
-    reference_data_input=gt_df,
-)
+# final_GEOBLEU_score, final_DTW_score = Evaluation(
+#     generated_data_input=mode_result_df,
+#     reference_data_input=gt_df,
+# )
+# print(f"Mode GEO-BLEU分數: {final_GEOBLEU_score:.4f}, DTW分數: {final_DTW_score:.4f}\n\n")
 
 """
 生成3000人分數
 """
+gen_result = []
+for cluster in cluster_list:
+    try:
+        if cluster != 1:
+            cluster_df = pd.read_csv(f'./Predictions/CVAE/class45vs15/cvae_model_class_cluster{cluster}_cityA.csv')
+            gen_result.append(cluster_df)
+            print(f'cluster{cluster} 使用生成數據', f'占比:{cluster_df.shape[0] / gt_df.shape[0]:.2f}')
+        else:
+            cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+            gen_result.append(cluster_df)
+            print(f'cluster{cluster} 使用眾數數據', f'占比:{cluster_df.shape[0] / gt_df.shape[0]:.2f}')
+
+    except:
+        cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+        gen_result.append(cluster_df)
+        print(f'cluster{cluster} 使用眾數數據', f'占比:{cluster_df.shape[0] / gt_df.shape[0]:.2f}')
+
+gen_result_df = pd.concat(gen_result, ignore_index=True).sort_values(by=['uid', 'd', 't']).reset_index(drop=True)
+valid_uid_list = gen_result_df['uid'].unique()
+print(f'要檢查的UID數量: {len(valid_uid_list)}')
+gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
+
+final_GEOBLEU_score, final_DTW_score = Evaluation(
+    generated_data_input=gen_result_df,
+    reference_data_input=gt_df,
+)
+print(f"生成 GEO-BLEU分數: {final_GEOBLEU_score:.4f}, DTW分數: {final_DTW_score:.4f}\n\n")
