@@ -194,7 +194,7 @@ if __name__ == "__main__":
     raw_train_df = raw_x_train_df
     raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
-    cluster = 3
+    cluster = -1
 
     train_uids = raw_train_df["uid"].unique()
     valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == cluster) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -203,10 +203,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y 
-    latent_dim = 4096 # 潛在空間維度
+    latent_dim = 1024 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 20
-    hidden_dim = 4096
+    uid_embed_dim = 1024
+    hidden_dim = 1024
     batch_size = 512
     max_len = 550
     num_layers = 1
