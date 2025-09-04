@@ -90,19 +90,25 @@ Mode3000人分數
 # print(f"Mode GEO-BLEU分數: {final_GEOBLEU_score:.4f}, DTW分數: {final_DTW_score:.4f}\n\n")
 
 """
-生成3000人分數
+cluster被拆分的部分整合
+"""
+# cluster_result = []
+# for batch_idx in range(10):
+#     batch_df = pd.read_csv(f'./Predictions/CVAE/cvae_model_class_h1400l1400uid180layers1_cluster4_{batch_idx+1}_cityA.csv')
+#     cluster_result.append(batch_df)
+
+# cluster_result_df = pd.concat(cluster_result, ignore_index=True).sort_values(by=['uid', 'd', 't']).reset_index(drop=True)
+# cluster_result_df.to_csv(f'./Predictions/CVAE/class45vs15/cvae_model_class_cluster4_cityA.csv', index=False)
+
+"""
+生成模型3000人分數
 """
 gen_result = []
 for cluster in cluster_list:
     try:
-        if cluster != 1:
-            cluster_df = pd.read_csv(f'./Predictions/CVAE/class45vs15/cvae_model_class_cluster{cluster}_cityA.csv')
-            gen_result.append(cluster_df)
-            print(f'cluster{cluster} 使用生成數據', f'占比:{cluster_df.shape[0] / gt_df.shape[0]:.2f}')
-        else:
-            cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-            gen_result.append(cluster_df)
-            print(f'cluster{cluster} 使用眾數數據', f'占比:{cluster_df.shape[0] / gt_df.shape[0]:.2f}')
+        cluster_df = pd.read_csv(f'./Predictions/CVAE/class45vs15/cvae_model_class_cluster{cluster}_cityA.csv')
+        gen_result.append(cluster_df)
+        print(f'cluster{cluster} 使用生成數據', f'占比:{cluster_df.shape[0] / gt_df.shape[0]:.2f}')
 
     except:
         cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')

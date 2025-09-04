@@ -210,8 +210,8 @@ if __name__ == "__main__":
     raw_train_df = raw_x_train_df
     raw_feature_df = pd.read_csv(f'./Stability/A_features.csv')
     raw_cluster_df = pd.read_csv(f'./Stability/A_activity_space.csv')
-    cluster = 4
-    cluster_batch_i = 2
+    cluster = -1
+    cluster_batch_i = 1
 
     train_uids = raw_train_df["uid"].unique()
     valid_uid_list = raw_cluster_df[(raw_cluster_df['cluster'] == cluster) & (raw_cluster_df['uid'].isin(train_uids))]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!
@@ -235,10 +235,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 1400 # 潛在空間維度
+    latent_dim = 2480 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
     uid_embed_dim = 180
-    hidden_dim = 1400
+    hidden_dim = 2480
     batch_size = 512
     max_len = 550
     num_layers = 1
@@ -557,7 +557,6 @@ if __name__ == "__main__":
         plt.tight_layout()
         plt.show()
 
-    valid_uid_list = mode_pred_df['uid'].unique().tolist()
     for i in range(10):
         plot_x_y_sequence_compare(uid=valid_uid_list[i],
                                     mode_df=mode_pred_df,
