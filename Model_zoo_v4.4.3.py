@@ -153,7 +153,6 @@ def sample_from_logits(logits, temperature=0.7, top_k=None, top_p=None):
         logits = logits / temperature
     return torch.argmax(logits, dim=-1)
 
-
 def generate_future_trajectory(model, user_train_df, user_test_df, uid_idx, device, valid_xy_list, temperature=1.0, top_k=None, top_p=None):
     model.eval()
     with torch.no_grad():
