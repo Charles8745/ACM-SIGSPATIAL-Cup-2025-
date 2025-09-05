@@ -939,7 +939,7 @@ if __name__ == "__main__":
     
     train_data_df_45 = raw_train_data_df[raw_train_data_df['d'] <= 45]
     test_data_df_15 = raw_train_data_df[raw_train_data_df['d'] > 45]
-    cluster = -1
+    cluster = 1
 
 
     valid_uid_list = cluster_df[(cluster_df['cluster'] == cluster) & (cluster_df['uid'] > 147000)]['uid'].unique() # !!!!!!!!!!!!!!!!!!!!!!!!!!

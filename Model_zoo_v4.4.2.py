@@ -235,10 +235,10 @@ if __name__ == "__main__":
 
     # 模型初始化
     input_dim = 2 # 目前僅考慮 x, y
-    latent_dim = 2480 # 潛在空間維度
+    latent_dim = 3500 # 潛在空間維度
     uid_dim = max(valid_uid_list) + 1
-    uid_embed_dim = 180
-    hidden_dim = 2480
+    uid_embed_dim = 95
+    hidden_dim = 3500
     batch_size = 512
     max_len = 550
     num_layers = 1
