@@ -73,21 +73,22 @@ def Evaluation(generated_data_input, reference_data_input, valid=False, city_nam
 """
 Mode3000人分數
 """
-# mode_result = []
-# for cluster in cluster_list:
-#     cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-#     mode_result.append(cluster_df)
+mode_result = []
+for cluster in cluster_list:
+    cluster_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    mode_result.append(cluster_df)
 
-# mode_result_df = pd.concat(mode_result, ignore_index=True).sort_values(by=['uid', 'd', 't']).reset_index(drop=True)
-# valid_uid_list = mode_result_df['uid'].unique()
-# print(f'要檢查的UID數量: {len(valid_uid_list)}')
-# gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
+mode_result_df = pd.concat(mode_result, ignore_index=True).sort_values(by=['uid', 'd', 't']).reset_index(drop=True)
+mode_result_df.to_csv(f'./Predictions/A_y_cluster_all_modify_Per_User_Per_t_Mode_working_day_modify.csv', index=False)
+valid_uid_list = mode_result_df['uid'].unique()
+print(f'要檢查的UID數量: {len(valid_uid_list)}')
+gt_df = gt_df[gt_df['uid'].isin(valid_uid_list)]
 
-# final_GEOBLEU_score, final_DTW_score = Evaluation(
-#     generated_data_input=mode_result_df,
-#     reference_data_input=gt_df,
-# )
-# print(f"Mode GEO-BLEU分數: {final_GEOBLEU_score:.4f}, DTW分數: {final_DTW_score:.4f}\n\n")
+final_GEOBLEU_score, final_DTW_score = Evaluation(
+    generated_data_input=mode_result_df,
+    reference_data_input=gt_df,
+)
+print(f"Mode GEO-BLEU分數: {final_GEOBLEU_score:.4f}, DTW分數: {final_DTW_score:.4f}\n\n")
 
 """
 cluster被拆分的部分整合

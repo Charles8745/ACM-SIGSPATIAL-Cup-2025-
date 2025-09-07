@@ -932,56 +932,71 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
-    # 檢查同一個cluster分數的那3000人45vs15-->Per_User_Per_t_Mode_working_day_modify
+    # 使用眾數產生3000人的預測結果-->Per_User_Per_t_Mode_working_day_modify
     raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_y_test.csv', header=0)
     feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
-    cluster_df = pd.read_csv('./Stability/A_activity_space.csv', header=0)
-    
-    train_data_df_45 = raw_train_data_df[raw_train_data_df['d'] <= 45]
-    test_data_df_15 = raw_train_data_df[raw_train_data_df['d'] > 45]
-    cluster = 1
 
-
-    valid_uid_list = cluster_df[(cluster_df['cluster'] == cluster) & (cluster_df['uid'] > 147000)]['uid'].unique() # !!!!!!!!!!!!!!!!!!!!!!!!!!
-    train_data_df_45 = train_data_df_45[train_data_df_45['uid'].isin(valid_uid_list)]
-    test_data_df_15 = test_data_df_15[test_data_df_15['uid'].isin(valid_uid_list)]
-    print(f'前45天有效的使用者ID數量: {len(train_data_df_45["uid"].unique())}')
-    print(f'後15天有效的使用者ID數量: {len(test_data_df_15["uid"].unique())}')
-    train_uids = set(train_data_df_45["uid"].unique())
-    test_uids = set(test_data_df_15["uid"].unique())
+    valid_uid_list = raw_train_data_df['uid'].unique()
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
-
-
-    std_model_zoo = ModelZoo(train_data_df_45, test_data_df_15)
+    std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
     std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
             feature_df = feature_df,
             valid_uid_list = valid_uid_list,
-            output_name=f'A_y_cluster{cluster}_modify',
+            output_name=f'A_y_modify',
             early_stop=150000
         )
 
-    final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-        generated_data_input = f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv',
-        reference_data_input = test_data_df_15,
-    )
-    print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    # # 檢查同一個cluster分數的那3000人45vs15-->Per_User_Per_t_Mode_working_day_modify
+    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
+    # feature_df = pd.read_csv('./Stability/A_features.csv', header=0)
+    # cluster_df = pd.read_csv('./Stability/A_activity_space.csv', header=0)
+    
+    # train_data_df_45 = raw_train_data_df[raw_train_data_df['d'] <= 45]
+    # test_data_df_15 = raw_train_data_df[raw_train_data_df['d'] > 45]
+    # cluster = 1
 
-    # 可視化比較
-    target_uid = valid_uid_list[0]
-    gen_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv', header=0)
-    user_test_df = test_data_df_15[test_data_df_15['uid'] == target_uid]
-    future_traj = gen_df[gen_df['uid'] == target_uid][['x', 'y']].values  
-    true_traj = user_test_df[['x', 'y']].values  # 真實第61~75天
 
-    plt.figure(figsize=(8, 6))
-    plt.scatter(true_traj[:, 0], true_traj[:, 1], label='True', color='blue', marker='o', alpha=0.5, s=3)
-    plt.scatter(future_traj[:, 0], future_traj[:, 1], label='Generated', color='red', marker='x', alpha=0.5, s=3)
-    plt.title(f'UID {target_uid} 第61~75天軌跡比較')
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.legend()
-    plt.grid()
-    plt.show()
+    # valid_uid_list = cluster_df[(cluster_df['cluster'] == cluster) & (cluster_df['uid'] > 147000)]['uid'].unique() # !!!!!!!!!!!!!!!!!!!!!!!!!!
+    # train_data_df_45 = train_data_df_45[train_data_df_45['uid'].isin(valid_uid_list)]
+    # test_data_df_15 = test_data_df_15[test_data_df_15['uid'].isin(valid_uid_list)]
+    # print(f'前45天有效的使用者ID數量: {len(train_data_df_45["uid"].unique())}')
+    # print(f'後15天有效的使用者ID數量: {len(test_data_df_15["uid"].unique())}')
+    # train_uids = set(train_data_df_45["uid"].unique())
+    # test_uids = set(test_data_df_15["uid"].unique())
+    # print(f'有效的使用者ID數量: {len(valid_uid_list)}')
+
+
+    # std_model_zoo = ModelZoo(train_data_df_45, test_data_df_15)
+    # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
+    #         feature_df = feature_df,
+    #         valid_uid_list = valid_uid_list,
+    #         output_name=f'A_y_cluster{cluster}_modify',
+    #         early_stop=150000
+    #     )
+
+    # final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+    #     generated_data_input = f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv',
+    #     reference_data_input = test_data_df_15,
+    # )
+    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+
+    # # 可視化比較
+    # target_uid = valid_uid_list[0]
+    # gen_df = pd.read_csv(f'./Predictions/A_y_cluster{cluster}_modify_Per_User_Per_t_Mode_working_day_modify.csv', header=0)
+    # user_test_df = test_data_df_15[test_data_df_15['uid'] == target_uid]
+    # future_traj = gen_df[gen_df['uid'] == target_uid][['x', 'y']].values  
+    # true_traj = user_test_df[['x', 'y']].values  # 真實第61~75天
+
+    # plt.figure(figsize=(8, 6))
+    # plt.scatter(true_traj[:, 0], true_traj[:, 1], label='True', color='blue', marker='o', alpha=0.5, s=3)
+    # plt.scatter(future_traj[:, 0], future_traj[:, 1], label='Generated', color='red', marker='x', alpha=0.5, s=3)
+    # plt.title(f'UID {target_uid} 第61~75天軌跡比較')
+    # plt.xlabel('x')
+    # plt.ylabel('y')
+    # plt.legend()
+    # plt.grid()
+    # plt.show()
 
     # # 檢查同一個cluster分數-->Per_User_Per_t_Mode_working_day_modify
     # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
