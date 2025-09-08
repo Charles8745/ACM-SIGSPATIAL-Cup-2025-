@@ -287,187 +287,187 @@ if __name__ == "__main__":
     #                 print(f"uid:{valid_uid} Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
     #                 break
 
-    # ===== 針對每個 uid 載入各自模型做推論 =====
-    results = []
-    test_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
+    # # ===== 針對每個 uid 載入各自模型做推論 =====
+    # results = []
+    # test_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
 
-    for idx, uid in enumerate(valid_uid_list):
-        user_train_df = raw_train_df[raw_train_df['uid'] == uid]
-        user_test_df = test_df[test_df['uid'] == uid]
+    # for idx, uid in enumerate(valid_uid_list):
+    #     user_train_df = raw_train_df[raw_train_df['uid'] == uid]
+    #     user_test_df = test_df[test_df['uid'] == uid]
 
-        # 重建該 uid 的有效點位與模型尺寸
-        xy_set = set((int(x), int(y)) for x, y in user_train_df[['x', 'y']].values)
-        valid_xy_list = sorted(list(xy_set))
-        N_valid = len(valid_xy_list)
-        latent_dim = N_valid
-        hidden_dim = N_valid 
+    #     # 重建該 uid 的有效點位與模型尺寸
+    #     xy_set = set((int(x), int(y)) for x, y in user_train_df[['x', 'y']].values)
+    #     valid_xy_list = sorted(list(xy_set))
+    #     N_valid = len(valid_xy_list)
+    #     latent_dim = N_valid
+    #     hidden_dim = N_valid 
 
-        ckpt_path = f"./ckpt/CVAE/uid_level_class/cvae_model_uid{uid}_l{latent_dim}h{hidden_dim}_city{city}.pth"
-        if not os.path.exists(ckpt_path):
-            print(f"[warn] 找不到 uid {uid} 的權重，略過")
-            continue
+    #     ckpt_path = f"./ckpt/CVAE/uid_level_class/cvae_model_uid{uid}_l{latent_dim}h{hidden_dim}_city{city}.pth"
+    #     if not os.path.exists(ckpt_path):
+    #         print(f"[warn] 找不到 uid {uid} 的權重，略過")
+    #         continue
 
-        # 建立同尺寸模型並載入該 uid 權重
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = CVAE(input_dim=2, latent_dim=latent_dim, uid_dim=1, uid_embed_dim=1,
-                     hidden_dim=hidden_dim, max_len=550, N_valid=N_valid, num_layers=1, dropout=0.3).to(device)
-        model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+    #     # 建立同尺寸模型並載入該 uid 權重
+    #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #     model = CVAE(input_dim=2, latent_dim=latent_dim, uid_dim=1, uid_embed_dim=1,
+    #                  hidden_dim=hidden_dim, max_len=550, N_valid=N_valid, num_layers=1, dropout=0.3).to(device)
+    #     model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
 
-        future_traj = generate_future_trajectory(
-            model=model,
-            user_train_df=user_train_df,
-            user_test_df=user_test_df,
-            uid_idx=0,
-            device=device,
-            valid_xy_list=valid_xy_list,
-        )
-        for i, row in enumerate(future_traj):
-            d = int(user_test_df.iloc[i]['d'])
-            t = int(user_test_df.iloc[i]['t'])
-            x = int(row[0])
-            y = int(row[1])
-            results.append([uid, d, t, x, y])
+    #     future_traj = generate_future_trajectory(
+    #         model=model,
+    #         user_train_df=user_train_df,
+    #         user_test_df=user_test_df,
+    #         uid_idx=0,
+    #         device=device,
+    #         valid_xy_list=valid_xy_list,
+    #     )
+    #     for i, row in enumerate(future_traj):
+    #         d = int(user_test_df.iloc[i]['d'])
+    #         t = int(user_test_df.iloc[i]['t'])
+    #         x = int(row[0])
+    #         y = int(row[1])
+    #         results.append([uid, d, t, x, y])
 
-        print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
+    #     print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
 
-    pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
-    os.makedirs('./Predictions/CVAE/', exist_ok=True)
-    pred_df.to_csv(f'./Predictions/CVAE/{city}_y_cvae_pred.csv', index=False)
-    print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_y_cvae_pred.csv")
+    # pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
+    # os.makedirs('./Predictions/CVAE/', exist_ok=True)
+    # pred_df.to_csv(f'./Predictions/CVAE/{city}_y_cvae_pred.csv', index=False)
+    # print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_y_cvae_pred.csv")
 
-    # ===== 評估 CVAE 45天 vs. gt 1-45天 geo_bleu=====
-    def Evaluation(generated_data_input, reference_data_input, valid=False, city_name=None, raw_data_path=None):
-        # 檢查生成的資料是否符合規範
-        if valid:
-            validator.main(city_name, raw_data_path, generated_data_input)
+    # # ===== 評估 CVAE 45天 vs. gt 1-45天 geo_bleu=====
+    # def Evaluation(generated_data_input, reference_data_input, valid=False, city_name=None, raw_data_path=None):
+    #     # 檢查生成的資料是否符合規範
+    #     if valid:
+    #         validator.main(city_name, raw_data_path, generated_data_input)
 
-        # 讀取生成與參考資料
-        if isinstance(generated_data_input, pd.DataFrame):
-            generated_df = generated_data_input
+    #     # 讀取生成與參考資料
+    #     if isinstance(generated_data_input, pd.DataFrame):
+    #         generated_df = generated_data_input
 
-        elif isinstance(generated_data_input, str):
-            generated_df = pd.read_csv(generated_data_input, header=0, dtype=int)
+    #     elif isinstance(generated_data_input, str):
+    #         generated_df = pd.read_csv(generated_data_input, header=0, dtype=int)
 
-        else:
-            raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
+    #     else:
+    #         raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
         
-        if isinstance(reference_data_input, pd.DataFrame):
-            reference_df = reference_data_input
+    #     if isinstance(reference_data_input, pd.DataFrame):
+    #         reference_df = reference_data_input
  
-        elif isinstance(reference_data_input, str):
-            reference_df = pd.read_csv(reference_data_input, header=0, dtype=int)
+    #     elif isinstance(reference_data_input, str):
+    #         reference_df = pd.read_csv(reference_data_input, header=0, dtype=int)
 
-        else:
-            raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
+    #     else:
+    #         raise ValueError("只能接受DataFrame或資料路徑字串（csv檔）。") 
         
-        # 檢查有哪些uid要check
-        valid_uid_list = generated_df['uid'].unique()
-        print(f'要檢查的UID數量: {len(valid_uid_list)}')
+    #     # 檢查有哪些uid要check
+    #     valid_uid_list = generated_df['uid'].unique()
+    #     print(f'要檢查的UID數量: {len(valid_uid_list)}')
 
-        # 計算每個 uid GEO-BLEU 和 dtw分數
-        GEOBLEU_scores = []
-        DTW_scores = []
-        for idx, uid in enumerate(valid_uid_list):
-            gen_user = generated_df[generated_df['uid'] == uid]
-            ref_user = reference_df[reference_df['uid'] == uid]
+    #     # 計算每個 uid GEO-BLEU 和 dtw分數
+    #     GEOBLEU_scores = []
+    #     DTW_scores = []
+    #     for idx, uid in enumerate(valid_uid_list):
+    #         gen_user = generated_df[generated_df['uid'] == uid]
+    #         ref_user = reference_df[reference_df['uid'] == uid]
 
-            gen_traj = gen_user[['d', 't', 'x', 'y']].to_records(index=False)
-            ref_traj = ref_user[['d', 't', 'x', 'y']].to_records(index=False)
-            gen_traj = [tuple(row) for row in gen_traj]
-            ref_traj = [tuple(row) for row in ref_traj]
+    #         gen_traj = gen_user[['d', 't', 'x', 'y']].to_records(index=False)
+    #         ref_traj = ref_user[['d', 't', 'x', 'y']].to_records(index=False)
+    #         gen_traj = [tuple(row) for row in gen_traj]
+    #         ref_traj = [tuple(row) for row in ref_traj]
 
-            # GEOBLEU_score
-            GEOBLEU_score = geobleu.calc_geobleu_single(gen_traj, ref_traj)
-            GEOBLEU_scores.append(GEOBLEU_score)
+    #         # GEOBLEU_score
+    #         GEOBLEU_score = geobleu.calc_geobleu_single(gen_traj, ref_traj)
+    #         GEOBLEU_scores.append(GEOBLEU_score)
 
-            # dtw
-            DTW_score = geobleu.calc_dtw_single(gen_traj, ref_traj)
-            DTW_scores.append(DTW_score)
+    #         # dtw
+    #         DTW_score = geobleu.calc_dtw_single(gen_traj, ref_traj)
+    #         DTW_scores.append(DTW_score)
 
-            print(f"{idx}/{len(valid_uid_list)}人--uid={uid}", end='\r')
+    #         print(f"{idx}/{len(valid_uid_list)}人--uid={uid}", end='\r')
 
-        final_GEOBLEU_score = sum(GEOBLEU_scores) / len(GEOBLEU_scores) if GEOBLEU_scores else 0.0
-        final_DTW_score = sum(DTW_scores) / len(DTW_scores) if DTW_scores else 0.0
+    #     final_GEOBLEU_score = sum(GEOBLEU_scores) / len(GEOBLEU_scores) if GEOBLEU_scores else 0.0
+    #     final_DTW_score = sum(DTW_scores) / len(DTW_scores) if DTW_scores else 0.0
 
-        return final_GEOBLEU_score, final_DTW_score
+    #     return final_GEOBLEU_score, final_DTW_score
 
-    final_GEOBLEU_score, final_DTW_score = Evaluation(
-    generated_data_input = f'./Predictions/CVAE/{city}_y_cvae_pred.csv',
-    reference_data_input = test_df,
-    )
-    print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+    # final_GEOBLEU_score, final_DTW_score = Evaluation(
+    # generated_data_input = f'./Predictions/CVAE/{city}_y_cvae_pred.csv',
+    # reference_data_input = test_df,
+    # )
+    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
-    # # ===== scatter cvae 61-75天 vs. gt 1-60 =====
-    # mode_pred_df = pd.read_csv(f'./Predictions/A_y_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    # cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/A_y_cvae_pred_3000people61-75.csv')
-    # gt_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv')
-    # valid_uid_list = cvae_pred_df['uid'].unique().tolist()
-    # np.random.shuffle(valid_uid_list)
+    # ===== scatter cvae 61-75天 vs. gt 1-60 =====
+    mode_pred_df = pd.read_csv(f'./Predictions/C_x_modify_Per_User_Per_t_Mode_working_day_modify.csv')
+    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/C_y_cvae_pred.csv')
+    gt_df = pd.read_csv('./Training_Testing_Data/C_x_test.csv')
+    valid_uid_list = cvae_pred_df['uid'].unique().tolist()
+    np.random.shuffle(valid_uid_list)
 
-    # fig, axes = plt.subplots(2, len(valid_uid_list[:5]), figsize=(20,12))
-    # for i, uid in enumerate(valid_uid_list[:5]):
-    #     axes[0, i].scatter(cvae_pred_df[cvae_pred_df['uid'] == uid]['x'],
-    #                     cvae_pred_df[cvae_pred_df['uid'] == uid]['y'],
-    #                     label='CVAE 61-75', alpha=0.8, s=10, color='red', marker='x')
-    #     axes[0, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
-    #             gt_df[gt_df['uid'] == uid]['y'],
-    #             label='GT 1-60', alpha=0.1, s=3, color='green')
-    #     axes[0, i].set_title(f'UID {uid} Mode')
-    #     axes[0, i].set_xlabel('x')
-    #     axes[0, i].set_ylabel('y')
-    #     axes[0, i].set_aspect('equal')
-    #     axes[0, i].set_xlim(1, 200)
-    #     axes[0, i].set_ylim(1, 200)
-    #     axes[0, i].grid(True)
-    #     axes[0, i].invert_yaxis()
-    #     axes[0, i].legend()
+    fig, axes = plt.subplots(2, len(valid_uid_list[:5]), figsize=(20,12))
+    for i, uid in enumerate(valid_uid_list[:5]):
+        axes[0, i].scatter(cvae_pred_df[cvae_pred_df['uid'] == uid]['x'],
+                        cvae_pred_df[cvae_pred_df['uid'] == uid]['y'],
+                        label='CVAE 61-75', alpha=0.8, s=10, color='red', marker='x')
+        axes[0, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+                gt_df[gt_df['uid'] == uid]['y'],
+                label='GT 1-60', alpha=0.1, s=3, color='green')
+        axes[0, i].set_title(f'UID {uid} Mode')
+        axes[0, i].set_xlabel('x')
+        axes[0, i].set_ylabel('y')
+        axes[0, i].set_aspect('equal')
+        axes[0, i].set_xlim(1, 200)
+        axes[0, i].set_ylim(1, 200)
+        axes[0, i].grid(True)
+        axes[0, i].invert_yaxis()
+        axes[0, i].legend()
 
-    #     axes[1, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
-    #             gt_df[gt_df['uid'] == uid]['y'],
-    #             label='gt', alpha=0.5, s=10, color='green')
-    #     axes[1, i].set_title(f'UID {uid} GT')
-    #     axes[1, i].set_xlabel('x')
-    #     axes[1, i].set_ylabel('y')
-    #     axes[1, i].set_aspect('equal')
-    #     axes[1, i].set_xlim(1, 200)
-    #     axes[1, i].set_ylim(1, 200)
-    #     axes[1, i].grid(True)
-    #     axes[1, i].invert_yaxis()
-    #     axes[1, i].legend()
+        axes[1, i].scatter(gt_df[gt_df['uid'] == uid]['x'],
+                gt_df[gt_df['uid'] == uid]['y'],
+                label='gt', alpha=0.5, s=10, color='green')
+        axes[1, i].set_title(f'UID {uid} GT')
+        axes[1, i].set_xlabel('x')
+        axes[1, i].set_ylabel('y')
+        axes[1, i].set_aspect('equal')
+        axes[1, i].set_xlim(1, 200)
+        axes[1, i].set_ylim(1, 200)
+        axes[1, i].grid(True)
+        axes[1, i].invert_yaxis()
+        axes[1, i].legend()
 
-    # plt.tight_layout()
-    # plt.show()
+    plt.tight_layout()
+    plt.show()
 
-    # # ===== 把mode, cvae的x,y拉出來看未來61-75天時間線段上的重合性 =====
-    # def plot_x_y_sequence_compare(uid, mode_df, cvae_df):
-    #     # 依照時間排序
-    #     mode_user = mode_df[mode_df['uid'] == uid].sort_values(['d', 't'])
-    #     cvae_user = cvae_df[cvae_df['uid'] == uid].sort_values(['d', 't'])
+    # ===== 把mode, cvae的x,y拉出來看未來61-75天時間線段上的重合性 =====
+    def plot_x_y_sequence_compare(uid, mode_df, cvae_df):
+        # 依照時間排序
+        mode_user = mode_df[mode_df['uid'] == uid].sort_values(['d', 't'])
+        cvae_user = cvae_df[cvae_df['uid'] == uid].sort_values(['d', 't'])
 
-    #     fig, axes = plt.subplots(2, figsize=(18, 12), sharex=True)
+        fig, axes = plt.subplots(2, figsize=(18, 12), sharex=True)
 
-    #     # 左：x的mode和cvae
-    #     axes[0].plot(mode_user['x'].values, '-o', label='Mode', color='red', alpha=0.7)
-    #     axes[0].plot(cvae_user['x'].values, '-o', label='CVAE', color='green', alpha=0.7)
-    #     axes[0].set_title(f'UID {uid} x 時序 (Mode vs CVAE)')
-    #     axes[0].set_ylabel('x')
-    #     axes[0].legend()
-    #     axes[0].grid(True)
+        # 左：x的mode和cvae
+        axes[0].plot(mode_user['x'].values, '-o', label='Mode', color='red', alpha=0.7)
+        axes[0].plot(cvae_user['x'].values, '-o', label='CVAE', color='green', alpha=0.7)
+        axes[0].set_title(f'UID {uid} x 時序 (Mode vs CVAE)')
+        axes[0].set_ylabel('x')
+        axes[0].legend()
+        axes[0].grid(True)
 
-    #     # 右：y的mode和cvae
-    #     axes[1].plot(mode_user['y'].values, '-o', label='Mode', color='red', alpha=0.7)
-    #     axes[1].plot(cvae_user['y'].values, '-o', label='CVAE', color='green', alpha=0.7)
-    #     axes[1].set_title(f'UID {uid} y 時序 (Mode vs CVAE)')
-    #     axes[1].set_ylabel('y')
-    #     axes[1].legend()
-    #     axes[1].grid(True)
+        # 右：y的mode和cvae
+        axes[1].plot(mode_user['y'].values, '-o', label='Mode', color='red', alpha=0.7)
+        axes[1].plot(cvae_user['y'].values, '-o', label='CVAE', color='green', alpha=0.7)
+        axes[1].set_title(f'UID {uid} y 時序 (Mode vs CVAE)')
+        axes[1].set_ylabel('y')
+        axes[1].legend()
+        axes[1].grid(True)
 
-    #     plt.tight_layout()
-    #     plt.show()
+        plt.tight_layout()
+        plt.show()
 
-    # for i in range(10):
-    #     plot_x_y_sequence_compare(uid=valid_uid_list[i],
-    #                                 mode_df=mode_pred_df,
-    #                                 cvae_df=cvae_pred_df,
-    #                                 )
+    for i in range(10):
+        plot_x_y_sequence_compare(uid=valid_uid_list[i],
+                                    mode_df=mode_pred_df,
+                                    cvae_df=cvae_pred_df,
+                                    )
         
