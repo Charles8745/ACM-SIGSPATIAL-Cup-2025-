@@ -932,27 +932,40 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
-    # 使用眾數產生前50人60vs15的預測結果-->Per_User_Per_t_Mode_working_day_modify
-    raw_train_data_df = pd.read_csv('./Training_Testing_Data/C_x_train.csv', header=0)
-    raw_test_data_df = pd.read_csv('./Training_Testing_Data/C_x_test.csv', header=0)
-    feature_df = pd.read_csv('./Stability/C_features.csv', header=0)
-
-    valid_uid_list = raw_train_data_df['uid'].unique()
-    valid_uid_list = valid_uid_list[:50]  # 只取前50個有效UID
-    print(f'有效的使用者ID數量: {len(valid_uid_list)}')
+    # 驗證Validtor
+    city = 'C'
+    raw_train_data_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_train.csv', header=0)
+    raw_test_data_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_test.csv', header=0)
+    feature_df = pd.read_csv(f'./Stability/{city}_features.csv', header=0)
     std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
-    std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
-            feature_df = feature_df,
-            valid_uid_list = valid_uid_list,
-            output_name=f'C_x_modify',
-            early_stop=150000
-        )
-
     final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-        generated_data_input = f'./Predictions/C_x_modify_Per_User_Per_t_Mode_working_day_modify.csv',
+        generated_data_input = f'./Submission/C_y_cvae_pred_3000people61-75.csv',
         reference_data_input = raw_test_data_df,
+        valid=True, 
+        city_name='c', 
+        raw_data_path=f'./Data/city_{city}_challengedata.csv'
     )
-    print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
+
+    # 使用眾數產生前50人60vs15的預測結果-->Per_User_Per_t_Mode_working_day_modify
+    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/C_y_train.csv', header=0)
+    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/C_y_test.csv', header=0)
+    # feature_df = pd.read_csv('./Stability/C_features.csv', header=0)
+
+    # valid_uid_list = raw_train_data_df['uid'].unique()
+    # print(f'有效的使用者ID數量: {len(valid_uid_list)}')
+    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
+    # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
+    #         feature_df = feature_df,
+    #         valid_uid_list = valid_uid_list,
+    #         output_name=f'C_y_modify',
+    #         early_stop=150000
+    #     )
+
+    # final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
+    #     generated_data_input = f'./Predictions/C_x_modify_Per_User_Per_t_Mode_working_day_modify.csv',
+    #     reference_data_input = raw_test_data_df,
+    # )
+    # print(f"最終GEO-BLEU分數: {final_GEOBLEU_score:.4f}, 最終DTW分數: {final_DTW_score:.4f}\n\n")
 
     # # 檢查同一個cluster分數的那3000人45vs15-->Per_User_Per_t_Mode_working_day_modify
     # raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_y_train.csv', header=0)
