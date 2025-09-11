@@ -933,16 +933,16 @@ class ModelZoo:
 """
 if __name__ == "__main__":
     # 驗證Validtor
-    city = 'C'
+    city = 'B'
     raw_train_data_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_train.csv', header=0)
     raw_test_data_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_test.csv', header=0)
     feature_df = pd.read_csv(f'./Stability/{city}_features.csv', header=0)
     std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
     final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-        generated_data_input = f'./Submission/C_y_cvae_pred_3000people61-75.csv',
+        generated_data_input = f'./Submission/anomaly_ware_submission_data/updated_cityB_mode.csv',
         reference_data_input = raw_test_data_df,
         valid=True, 
-        city_name='c', 
+        city_name='b', 
         raw_data_path=f'./Data/city_{city}_challengedata.csv'
     )
 
