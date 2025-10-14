@@ -932,34 +932,18 @@ class ModelZoo:
 測試程式碼
 """
 if __name__ == "__main__":
-    # 驗證Validtor
-    city = 'B'
-    raw_train_data_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_train.csv', header=0)
-    raw_test_data_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_test.csv', header=0)
-    feature_df = pd.read_csv(f'./Stability/{city}_features.csv', header=0)
+    # 使用眾數產生前3000人的預測結果-->Per_User_Per_t_Mode_working_day(self, valid_uid_list, output_name, early_stop=None)
+    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
+
+    valid_uid_list = raw_train_data_df['uid'].unique()
+    print(f'有效的使用者ID數量: {len(valid_uid_list)}')
     std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
-    final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
-        generated_data_input = f'./Submission/anomaly_ware_submission_data/updated_cityB_mode.csv',
-        reference_data_input = raw_test_data_df,
-        valid=True, 
-        city_name='b', 
-        raw_data_path=f'./Data/city_{city}_challengedata.csv'
-    )
-
-    # 使用眾數產生前50人60vs15的預測結果-->Per_User_Per_t_Mode_working_day_modify
-    # raw_train_data_df = pd.read_csv('./Training_Testing_Data/C_y_train.csv', header=0)
-    # raw_test_data_df = pd.read_csv('./Training_Testing_Data/C_y_test.csv', header=0)
-    # feature_df = pd.read_csv('./Stability/C_features.csv', header=0)
-
-    # valid_uid_list = raw_train_data_df['uid'].unique()
-    # print(f'有效的使用者ID數量: {len(valid_uid_list)}')
-    # std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
-    # std_model_zoo.Per_User_Per_t_Mode_working_day_modify(
-    #         feature_df = feature_df,
-    #         valid_uid_list = valid_uid_list,
-    #         output_name=f'C_y_modify',
-    #         early_stop=150000
-    #     )
+    std_model_zoo.Per_User_Per_t_Mode_working_day(
+            valid_uid_list = valid_uid_list,
+            output_name=f'A_x',
+            early_stop=3000
+        )
 
     # final_GEOBLEU_score, final_DTW_score = std_model_zoo.Evaluation(
     #     generated_data_input = f'./Predictions/C_x_modify_Per_User_Per_t_Mode_working_day_modify.csv',

@@ -193,14 +193,11 @@ if __name__ == "__main__":
         pass
 
     # 資料準備 完整3000人1-60天訓練
-    city = 'C'
-    raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_train.csv')
-    raw_train_df = raw_x_train_df
-    raw_feature_df = pd.read_csv(f'./Stability/{city}_features.csv')
-    raw_cluster_df = pd.read_csv(f'./Stability/{city}_activity_space.csv')
+    city = 'A'
+    raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
+    raw_train_df = raw_x_train_df.copy()
 
-    train_uids = raw_train_df["uid"].unique()
-    valid_uid_list = raw_cluster_df[raw_cluster_df['uid'].isin(train_uids)]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!
+    valid_uid_list = raw_train_df["uid"].unique()
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
     for uid_idx, valid_uid in enumerate(valid_uid_list): # 逐 uid 訓練
@@ -279,6 +276,7 @@ if __name__ == "__main__":
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 wait = 0
+                os.makedirs(f"./ckpt/CVAE/uid_level_class/", exist_ok=True)
                 torch.save(model.state_dict(), f"./ckpt/CVAE/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
             else:
                 wait += 1
@@ -289,7 +287,7 @@ if __name__ == "__main__":
 
     # ===== 針對每個 uid 載入各自模型做推論 =====
     results = []
-    test_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_test.csv')
+    test_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
 
     for idx, uid in enumerate(valid_uid_list):
         user_train_df = raw_train_df[raw_train_df['uid'] == uid]
@@ -332,13 +330,13 @@ if __name__ == "__main__":
 
     pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
     os.makedirs('./Predictions/CVAE/', exist_ok=True)
-    pred_df.to_csv(f'./Predictions/CVAE/{city}_y_cvae_pred.csv', index=False)
-    print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_y_cvae_pred.csv")
+    pred_df.to_csv(f'./Predictions/CVAE/{city}_x_cvae_pred.csv', index=False)
+    print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_x_cvae_pred.csv")
 
-    # ===== scatter cvae 61-75天 vs. gt 1-60 =====
-    mode_pred_df = pd.read_csv(f'./Predictions/C_y_modify_Per_User_Per_t_Mode_working_day_modify.csv')
-    cvae_pred_df = pd.read_csv(f'./Submission/C_y_cvae_pred_3000people61-75.csv')
-    gt_df = pd.read_csv('./Training_Testing_Data/C_y_train.csv')
+    # ===== scatter cvae 61-75天 vs. gt 61-75 =====
+    mode_pred_df = pd.read_csv(f'./Predictions/A_x_Per_User_Per_t_Mode_working_day.csv')
+    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/A_x_cvae_pred.csv')
+    gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
     valid_uid_list = cvae_pred_df['uid'].unique().tolist()
     np.random.shuffle(valid_uid_list)
 
