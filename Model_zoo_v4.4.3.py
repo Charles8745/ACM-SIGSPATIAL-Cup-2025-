@@ -203,137 +203,137 @@ if __name__ == "__main__":
     valid_uid_list = raw_cluster_df[raw_cluster_df['uid'].isin(train_uids)]['uid'].unique().tolist() # !!!!!!!!!!!!!!!!!!!!!
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
-    # for uid_idx, valid_uid in enumerate(valid_uid_list): # 逐 uid 訓練
-    #     # 統計有效點位
-    #     xy_set = set()
-    #     user_df = raw_train_df[raw_train_df['uid'] == valid_uid]
-    #     xy_arr = user_df[['x', 'y']].values
-    #     for x, y in xy_arr:
-    #         xy_set.add((int(x), int(y)))
-    #     valid_xy_list = sorted(list(xy_set))
-    #     xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
-    #     N_valid = len(valid_xy_list)
-    #     print(f"uid:{valid_uid} 有效點位數量: {N_valid}")
+    for uid_idx, valid_uid in enumerate(valid_uid_list): # 逐 uid 訓練
+        # 統計有效點位
+        xy_set = set()
+        user_df = raw_train_df[raw_train_df['uid'] == valid_uid]
+        xy_arr = user_df[['x', 'y']].values
+        for x, y in xy_arr:
+            xy_set.add((int(x), int(y)))
+        valid_xy_list = sorted(list(xy_set))
+        xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
+        N_valid = len(valid_xy_list)
+        print(f"uid:{valid_uid} 有效點位數量: {N_valid}")
 
-    #     # 模型初始化
-    #     input_dim = 2 # 目前僅考慮 x, y
-    #     latent_dim = N_valid # 潛在空間維度
-    #     uid_dim = 1
-    #     uid_embed_dim = 1
-    #     hidden_dim = N_valid
-    #     batch_size = 1
-    #     max_len = 550
-    #     num_layers = 1
+        # 模型初始化
+        input_dim = 2 # 目前僅考慮 x, y
+        latent_dim = N_valid # 潛在空間維度
+        uid_dim = 1
+        uid_embed_dim = 1
+        hidden_dim = N_valid
+        batch_size = 1
+        max_len = 550
+        num_layers = 1
 
-    #     dataset = TrajectoryDataset(raw_train_df, [valid_uid], xy2idx, max_len=max_len)
-    #     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, N_valid, num_layers, dropout=0.3).to(device)
-    #     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        dataset = TrajectoryDataset(raw_train_df, [valid_uid], xy2idx, max_len=max_len)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, N_valid, num_layers, dropout=0.3).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    #     # 訓練迴圈 + EarlyStopping（每 uid 分開）
-    #     epochs = 20000
-    #     patience = 100
-    #     best_loss = float('inf')
-    #     wait = 0
-    #     loss_list = []
-    #     recon_list = []
-    #     kl_list = []
-    #     for epoch in range(epochs):
-    #         beta = min(1.0, epoch / 10000)
-    #         model.train()
-    #         total_loss = 0
-    #         total_recon = 0
-    #         total_kl = 0
-    #         for x, mask, lengths, uid, t, working_day, weights, xy_idx in dataloader:
-    #             x = x.to(device)
-    #             mask = mask.to(device)
-    #             t = t.to(device)
-    #             working_day = working_day.long().to(device)
-    #             # 單 uid 設為索引 0，避免嵌入越界
-    #             uid = torch.zeros(x.size(0), dtype=torch.long, device=device)
-    #             weights = weights.to(device)
-    #             xy_idx = xy_idx.to(device)
+        # 訓練迴圈 + EarlyStopping（每 uid 分開）
+        epochs = 20000
+        patience = 100
+        best_loss = float('inf')
+        wait = 0
+        loss_list = []
+        recon_list = []
+        kl_list = []
+        for epoch in range(epochs):
+            beta = min(1.0, epoch / 10000)
+            model.train()
+            total_loss = 0
+            total_recon = 0
+            total_kl = 0
+            for x, mask, lengths, uid, t, working_day, weights, xy_idx in dataloader:
+                x = x.to(device)
+                mask = mask.to(device)
+                t = t.to(device)
+                working_day = working_day.long().to(device)
+                # 單 uid 設為索引 0，避免嵌入越界
+                uid = torch.zeros(x.size(0), dtype=torch.long, device=device)
+                weights = weights.to(device)
+                xy_idx = xy_idx.to(device)
 
-    #             optimizer.zero_grad()
-    #             xy_logits, mu, logvar = model(x, uid, t, working_day, mask)
-    #             loss, recon_loss, kl_loss = cvae_loss(xy_logits, xy_idx, mu, logvar, mask, weights, beta=beta)
-    #             loss.backward()
-    #             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-    #             optimizer.step()
+                optimizer.zero_grad()
+                xy_logits, mu, logvar = model(x, uid, t, working_day, mask)
+                loss, recon_loss, kl_loss = cvae_loss(xy_logits, xy_idx, mu, logvar, mask, weights, beta=beta)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
 
-    #             total_loss += loss.item()
-    #             total_recon += recon_loss.item()
-    #             total_kl += kl_loss.item()
+                total_loss += loss.item()
+                total_recon += recon_loss.item()
+                total_kl += kl_loss.item()
 
-    #         avg_loss = total_loss / len(dataloader)
-    #         avg_recon = total_recon / len(dataloader)
-    #         avg_kl = total_kl / len(dataloader)
-    #         loss_list.append(avg_loss)
-    #         recon_list.append(avg_recon)
-    #         kl_list.append(avg_kl)
+            avg_loss = total_loss / len(dataloader)
+            avg_recon = total_recon / len(dataloader)
+            avg_kl = total_kl / len(dataloader)
+            loss_list.append(avg_loss)
+            recon_list.append(avg_recon)
+            kl_list.append(avg_kl)
 
-    #         if (epoch + 1) % 1000 == 0:
-    #             print(f"{uid_idx+1}/{len(valid_uid_list)} uid:{valid_uid} Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
+            if (epoch + 1) % 1000 == 0:
+                print(f"{uid_idx+1}/{len(valid_uid_list)} uid:{valid_uid} Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
 
-    #         if avg_loss < best_loss:
-    #             best_loss = avg_loss
-    #             wait = 0
-    #             torch.save(model.state_dict(), f"./ckpt/CVAE/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
-    #         else:
-    #             wait += 1
-    #             if wait >= patience:
-    #                 print(f"uid:{valid_uid} Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
-    #                 break
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+                wait = 0
+                torch.save(model.state_dict(), f"./ckpt/CVAE/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
+            else:
+                wait += 1
+                if wait >= patience:
+                    print(f"uid:{valid_uid} Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+                    break
 
 
-    # # ===== 針對每個 uid 載入各自模型做推論 =====
-    # results = []
-    # test_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_test.csv')
+    # ===== 針對每個 uid 載入各自模型做推論 =====
+    results = []
+    test_df = pd.read_csv(f'./Training_Testing_Data/{city}_y_test.csv')
 
-    # for idx, uid in enumerate(valid_uid_list):
-    #     user_train_df = raw_train_df[raw_train_df['uid'] == uid]
-    #     user_test_df = test_df[test_df['uid'] == uid]
+    for idx, uid in enumerate(valid_uid_list):
+        user_train_df = raw_train_df[raw_train_df['uid'] == uid]
+        user_test_df = test_df[test_df['uid'] == uid]
 
-    #     # 重建該 uid 的有效點位與模型尺寸
-    #     xy_set = set((int(x), int(y)) for x, y in user_train_df[['x', 'y']].values)
-    #     valid_xy_list = sorted(list(xy_set))
-    #     N_valid = len(valid_xy_list)
-    #     latent_dim = N_valid
-    #     hidden_dim = N_valid 
+        # 重建該 uid 的有效點位與模型尺寸
+        xy_set = set((int(x), int(y)) for x, y in user_train_df[['x', 'y']].values)
+        valid_xy_list = sorted(list(xy_set))
+        N_valid = len(valid_xy_list)
+        latent_dim = N_valid
+        hidden_dim = N_valid 
 
-    #     ckpt_path = f"./ckpt/CVAE/uid_level_class/cvae_model_uid{uid}_l{latent_dim}h{hidden_dim}_city{city}.pth"
-    #     if not os.path.exists(ckpt_path):
-    #         print(f"[warn] 找不到 uid {uid} 的權重，略過")
-    #         continue
+        ckpt_path = f"./ckpt/CVAE/uid_level_class/cvae_model_uid{uid}_l{latent_dim}h{hidden_dim}_city{city}.pth"
+        if not os.path.exists(ckpt_path):
+            print(f"[warn] 找不到 uid {uid} 的權重，略過")
+            continue
 
-    #     # 建立同尺寸模型並載入該 uid 權重
-    #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #     model = CVAE(input_dim=2, latent_dim=latent_dim, uid_dim=1, uid_embed_dim=1,
-    #                  hidden_dim=hidden_dim, max_len=550, N_valid=N_valid, num_layers=1, dropout=0.3).to(device)
-    #     model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+        # 建立同尺寸模型並載入該 uid 權重
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = CVAE(input_dim=2, latent_dim=latent_dim, uid_dim=1, uid_embed_dim=1,
+                     hidden_dim=hidden_dim, max_len=550, N_valid=N_valid, num_layers=1, dropout=0.3).to(device)
+        model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
 
-    #     future_traj = generate_future_trajectory(
-    #         model=model,
-    #         user_train_df=user_train_df,
-    #         user_test_df=user_test_df,
-    #         uid_idx=0,
-    #         device=device,
-    #         valid_xy_list=valid_xy_list,
-    #     )
-    #     for i, row in enumerate(future_traj):
-    #         d = int(user_test_df.iloc[i]['d'])
-    #         t = int(user_test_df.iloc[i]['t'])
-    #         x = int(row[0])
-    #         y = int(row[1])
-    #         results.append([uid, d, t, x, y])
+        future_traj = generate_future_trajectory(
+            model=model,
+            user_train_df=user_train_df,
+            user_test_df=user_test_df,
+            uid_idx=0,
+            device=device,
+            valid_xy_list=valid_xy_list,
+        )
+        for i, row in enumerate(future_traj):
+            d = int(user_test_df.iloc[i]['d'])
+            t = int(user_test_df.iloc[i]['t'])
+            x = int(row[0])
+            y = int(row[1])
+            results.append([uid, d, t, x, y])
 
-    #     print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
+        print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
 
-    # pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
-    # os.makedirs('./Predictions/CVAE/', exist_ok=True)
-    # pred_df.to_csv(f'./Predictions/CVAE/{city}_y_cvae_pred.csv', index=False)
-    # print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_y_cvae_pred.csv")
+    pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
+    os.makedirs('./Predictions/CVAE/', exist_ok=True)
+    pred_df.to_csv(f'./Predictions/CVAE/{city}_y_cvae_pred.csv', index=False)
+    print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_y_cvae_pred.csv")
 
     # ===== scatter cvae 61-75天 vs. gt 1-60 =====
     mode_pred_df = pd.read_csv(f'./Predictions/C_y_modify_Per_User_Per_t_Mode_working_day_modify.csv')

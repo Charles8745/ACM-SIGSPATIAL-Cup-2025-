@@ -39,32 +39,20 @@ class DataPreprocessor:
     def __init__(self):
         pass
 
-    def label_working_day(self, df, city_name):
+    def label_working_day(self, df):
         """
         將工作日標記為1，非工作日標記為0。
         1: Monday, 2: Tuesday, 3: Wednesday, 4: Thursday, 5: Friday, 6: Saturday, 0: Sunday
         額外規則：第31天和第35天也是假日
         """
-        # 城市A和B是1~75連續，已知第七天是禮拜五，則可推出每週的對應關係。
-        if city_name == 'A' or city_name == 'B':
-            df['day_of_week'] = ((df['d'] - 7) % 7 + 5) % 7
-            df['working_day'] = 1
-            df.loc[df['day_of_week'].isin([6, 0]), 'working_day'] = 0
+        # 2024城市A~D是1~75連續，已知第6天是禮拜五，則可推出每週的對應關係。
+        df['day_of_week'] = ((df['d'] + 1 - 7) % 7 + 6) % 7
+        df['working_day'] = 1
+        df.loc[df['day_of_week'].isin([6, 0]), 'working_day'] = 0
 
-        # 城市C和D是1~60是一個區間(一樣第七天是禮拜五)，而61~75是另一個區間(第65和第72是禮拜五)
-        elif city_name == 'C' or city_name == 'D':
-            df['day_of_week'] = 0  # 先預設
-            # 1~60天：第7天是禮拜五
-            mask1 = df['d'] <= 60
-            df.loc[mask1, 'day_of_week'] = ((df.loc[mask1, 'd'] - 7) % 7 + 5) % 7
-            # 61~75天：第65天是禮拜五
-            mask2 = df['d'] > 60
-            df.loc[mask2, 'day_of_week'] = ((df.loc[mask2, 'd'] - 65) % 7 + 5) % 7
-            df['working_day'] = 1
-            df.loc[df['day_of_week'].isin([6, 0]), 'working_day'] = 0
 
-        # 額外規則：第31天和第35天也是假日
-        df.loc[df['d'].isin([31, 35]), 'working_day'] = 0
+        # 額外規則：第2,9,30,38,51天也是假日
+        df.loc[df['d'].isin([1, 8, 29, 37, 50]), 'working_day'] = 0
 
         return df
 
@@ -78,7 +66,7 @@ class DataPreprocessor:
         raw_data_df = pd.read_csv(data_input_path, header=0, dtype=int) 
 
         # label working day
-        raw_data_df = self.label_working_day(df=raw_data_df, city_name=city_name)
+        raw_data_df = self.label_working_day(df=raw_data_df)
 
         # 新增delta_t欄位
         raw_data_df['delta_t'] = raw_data_df.groupby('uid')['t'].diff()
@@ -90,29 +78,20 @@ class DataPreprocessor:
         # 第一筆資料（沒有前一筆）設為1
         raw_data_df['delta_t'] = raw_data_df['delta_t'].fillna(1)
 
-        # 找到x=999的最小uid
-        split_point = raw_data_df[raw_data_df['x'] == 999]['uid'].unique().min()
-        print(f"資料分割點: uid={split_point}\n")
+        # 只要前3000人的uid
+        split_point = raw_data_df[raw_data_df['uid'] < 3001]['uid'].max()
 
         # x_train;x_test (x,y中無999的uid，完整1-75天資料)
-        x_train_df = raw_data_df[(raw_data_df['d'] <= 60) & (raw_data_df['uid'] < split_point)]
-        x_test_df = raw_data_df[(raw_data_df['d'] > 60) & (raw_data_df['uid'] < split_point)]
+        x_train_df = raw_data_df[(raw_data_df['d'] <= 59) & (raw_data_df['uid'] < split_point)]
+        x_test_df = raw_data_df[(raw_data_df['d'] > 59) & (raw_data_df['uid'] < split_point)]
         x_train_df.to_csv(f'./Training_Testing_Data/{city_name}_x_train.csv', index=False)
         x_test_df.to_csv(f'./Training_Testing_Data/{city_name}_x_test.csv', index=False)
         print(f"x_train有{x_train_df.shape[0]}筆資料, 有{x_train_df['uid'].nunique()}個uid, 從{x_train_df['uid'].min()}到{x_train_df['uid'].max()}")
         print(f"x_test有{x_test_df.shape[0]}筆資料, 有{x_test_df['uid'].nunique()}個uid, 從{x_test_df['uid'].min()}到{x_test_df['uid'].max()}\n")
 
-        # y_train;y_test (y中有999的uid)
-        y_train_df = raw_data_df[(raw_data_df['d'] <= 60) & (raw_data_df['uid'] >= split_point)]
-        y_test_df = raw_data_df[(raw_data_df['d'] > 60) & (raw_data_df['uid'] >= split_point)]
-        y_train_df.to_csv(f'./Training_Testing_Data/{city_name}_y_train.csv', index=False)
-        y_test_df.to_csv(f'./Training_Testing_Data/{city_name}_y_test.csv', index=False)
-        print(f"y_train有{y_train_df.shape[0]}筆資料, 有{y_train_df['uid'].nunique()}個uid, 從{y_train_df['uid'].min()}到{y_train_df['uid'].max()}")
-        print(f"y_test有{y_test_df.shape[0]}筆資料, 有{y_test_df['uid'].nunique()}個uid, 從{y_test_df['uid'].min()}到{y_test_df['uid'].max()}\n")
-
 
         print("資料處理完成，已儲存在Training_Testing_Data資料夾中\n")
-        return x_train_df, x_test_df, y_train_df, y_test_df
+        return x_train_df, x_test_df
 
     def stability_analysis_std(self, input_df, output_name='XX_xORytrain'):
         """
@@ -1181,92 +1160,7 @@ class DataPreprocessor:
 測試程式碼
 """
 if __name__ == "__main__":
-    # # New Training_testint_data
-    """
-    測試std[4,5]
-    """
-    mode_std_pred_df = pd.read_csv('./Predictions/A_std5_Per_User_Per_t_Mode_working_day_modify.csv')
-    raw_train_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv')
-    valid_uid_list=mode_std_pred_df['uid'].unique().tolist()
+    dp = DataPreprocessor()
 
-    # # 取特徵
-    # adp = DataPreprocessor() 
-    # adp.extract_features(input_x_train='./Training_Testing_Data/A_x_train.csv', 
-    #                      input_y_train='./Training_Testing_Data/A_y_train.csv', 
-    #                      output_name='A', 
-    #                      valid_uid_list=None)
- 
-    # 畫軌跡
-    uid = 41
-    user_df = raw_train_df[(raw_train_df['uid'] == uid) & (raw_train_df['d'] >30)] 
-    features_df = pd.read_csv('./Stability/A_features.csv')
-    commute_str = features_df[features_df['uid'] == uid]['commute_paths'].values[0]
-    hotspot_centers_str = features_df[features_df['uid'] == uid]['hotspot_centers'].values[0]
-    hotspot_radius = features_df[features_df['uid'] == uid]['hotspot_radius'].values[0]
-    bbox_xmin = features_df[features_df['uid'] == uid]['bbox_xmin'].values[0]
-    bbox_ymin = features_df[features_df['uid'] == uid]['bbox_ymin'].values[0]
-    bbox_xmax = features_df[features_df['uid'] == uid]['bbox_xmax'].values[0]
-    bbox_ymax = features_df[features_df['uid'] == uid]['bbox_ymax'].values[0]
-    # 取得 home 位置
-    home_x = features_df[features_df['uid'] == uid]['home_x'].values[0]
-    home_y = features_df[features_df['uid'] == uid]['home_y'].values[0]
-    os.makedirs('./Animations', exist_ok=True)
-    os.makedirs(f'./Animations/uid_{uid}_each_frame', exist_ok=True)
-
-    # 解析 commute_str 成為點的 list
-    commute_points = re.findall(r'\((\d+),(\d+)\)', commute_str)
-    commute_points = [(int(x), int(y)) for x, y in commute_points]
-    # 以home為基準，找到距離home最近的點，然後依序畫
-    if commute_points:
-        xs, ys = zip(*commute_points)
-    else:
-        xs, ys = [], []
-    # 解析hotspot_centers
-    hotspot_points = re.findall(r'\(([\d\.]+),([\d\.]+)\)', str(hotspot_centers_str))
-    hotspot_points = [(float(x), float(y)) for x, y in hotspot_points]
-    
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_xlim(1, 200)
-    ax.set_ylim(1, 200)
-    ax.invert_yaxis()
-    ax.grid(True, alpha=0.3)
-    ax.xaxis.set_major_locator(MultipleLocator(10))
-    ax.yaxis.set_major_locator(MultipleLocator(10))
-
-    def init():
-        ax.clear()
-        ax.set_xlim(1, 200)
-        ax.set_ylim(1, 200)
-        ax.invert_yaxis()
-        ax.grid(True, alpha=0.3)
-        ax.xaxis.set_major_locator(MultipleLocator(10))
-        ax.yaxis.set_major_locator(MultipleLocator(10))
-        # 畫通勤路線
-        if xs and ys:
-            ax.plot(xs, ys, color='blue', linewidth=1, alpha=0.7, label='Commute Path', zorder=5)
-        # 畫hotspot中心與半徑
-        for x, y in hotspot_points:
-            circle = plt.Circle((x, y), hotspot_radius, color='orange', fill=True, linewidth=1, alpha=0.5, zorder=1)
-            ax.add_patch(circle)
-        # 畫生活範圍bbox
-        if not np.isnan(bbox_xmin) and not np.isnan(bbox_ymin) and not np.isnan(bbox_xmax) and not np.isnan(bbox_ymax):
-            rect = plt.Rectangle((bbox_xmin, bbox_ymin), bbox_xmax-bbox_xmin, bbox_ymax-bbox_ymin,
-                                linewidth=2, edgecolor='black', facecolor='none', alpha=0.5, zorder=20, label='Living BBox')
-            ax.add_patch(rect)
-        # 加上圖例
-        ax.legend(loc='upper right')
-
-    def update(i):
-        # 不要 ax.clear()，只疊加軌跡點
-        init()  # 保證底圖和通勤路線都在
-        window = 3
-        for j in range(max(0, i - window + 1), i + 1):
-            alpha = 0.1 + 0.9 * (j - max(0, i - window + 1)) / window
-            ax.scatter(user_df.iloc[j]['x'], user_df.iloc[j]['y'], alpha=alpha, s=30, c='red')
-        ax.set_title(f"uid={uid} 第{user_df.iloc[i]['d']}天 {user_df.iloc[i]['t']*0.5}點鐘 working: {user_df.iloc[i]['working_day']}", fontsize=14)
-        fig.savefig(f'./Animations/uid_{uid}_each_frame/uid_{uid}_day{user_df.iloc[i]["d"]}_time{user_df.iloc[i]["t"]*0.5}.png')
-        print(f"單人分時軌跡動畫進度: {i+1}/{user_df.shape[0]}", end='\r')
-
-    ani = anime.FuncAnimation(fig, update, frames=user_df.shape[0], init_func=init, repeat=True)
-    ani.save(f'./Animations/uid_{uid}_trajectory_animation.gif', fps=2, writer='pillow')
-    plt.show()
+    # 讀取資料
+    train_df, test_df = dp.get_training_testing_data(city_name='A', data_input_path='./2024 RawDataset/cityA-dataset.csv')
