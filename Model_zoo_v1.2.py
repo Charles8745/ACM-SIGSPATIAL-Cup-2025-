@@ -933,15 +933,15 @@ class ModelZoo:
 """
 if __name__ == "__main__":
     # 使用眾數產生前3000人的預測結果-->Per_User_Per_t_Mode_working_day(self, valid_uid_list, output_name, early_stop=None)
-    raw_train_data_df = pd.read_csv('./Training_Testing_Data/A_x_train.csv', header=0)
-    raw_test_data_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv', header=0)
+    raw_train_data_df = pd.read_csv('./Training_Testing_Data/B_x_train.csv', header=0)
+    raw_test_data_df = pd.read_csv('./Training_Testing_Data/B_x_test.csv', header=0)
 
     valid_uid_list = raw_train_data_df['uid'].unique()
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
     std_model_zoo = ModelZoo(raw_train_data_df, raw_test_data_df)
     std_model_zoo.Per_User_Per_t_Mode_working_day(
             valid_uid_list = valid_uid_list,
-            output_name=f'A_x',
+            output_name=f'B_x',
             early_stop=3000
         )
 

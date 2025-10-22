@@ -193,101 +193,103 @@ if __name__ == "__main__":
         pass
 
     # 資料準備 完整3000人1-60天訓練
-    city = 'A'
+    city = 'B'
     raw_x_train_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_train.csv')
     raw_train_df = raw_x_train_df.copy()
 
     valid_uid_list = raw_train_df["uid"].unique()
     print(f'有效的使用者ID數量: {len(valid_uid_list)}')
 
-    for uid_idx, valid_uid in enumerate(valid_uid_list): # 逐 uid 訓練
-        # 統計有效點位
-        xy_set = set()
-        user_df = raw_train_df[raw_train_df['uid'] == valid_uid]
-        xy_arr = user_df[['x', 'y']].values
-        for x, y in xy_arr:
-            xy_set.add((int(x), int(y)))
-        valid_xy_list = sorted(list(xy_set))
-        xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
-        N_valid = len(valid_xy_list)
-        print(f"uid:{valid_uid} 有效點位數量: {N_valid}")
+    # for uid_idx, valid_uid in enumerate(valid_uid_list): # 逐 uid 訓練
+    #     # 統計有效點位
+    #     xy_set = set()
+    #     user_df = raw_train_df[raw_train_df['uid'] == valid_uid]
+    #     xy_arr = user_df[['x', 'y']].values
+    #     for x, y in xy_arr:
+    #         xy_set.add((int(x), int(y)))
+    #     valid_xy_list = sorted(list(xy_set))
+    #     xy2idx = {xy: i for i, xy in enumerate(valid_xy_list)}
+    #     N_valid = len(valid_xy_list)
+    #     print(f"uid:{valid_uid} 有效點位數量: {N_valid}")
 
-        # 模型初始化
-        input_dim = 2 # 目前僅考慮 x, y
-        latent_dim = N_valid # 潛在空間維度
-        uid_dim = 1
-        uid_embed_dim = 1
-        hidden_dim = N_valid
-        batch_size = 1
-        max_len = 550
-        num_layers = 1
+    #     # 模型初始化
+    #     input_dim = 2 # 目前僅考慮 x, y
+    #     latent_dim = N_valid # 潛在空間維度
+    #     uid_dim = 1
+    #     uid_embed_dim = 1
+    #     hidden_dim = N_valid
+    #     batch_size = 1
+    #     max_len = 550
+    #     num_layers = 1
 
-        dataset = TrajectoryDataset(raw_train_df, [valid_uid], xy2idx, max_len=max_len)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, N_valid, num_layers, dropout=0.3).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    #     dataset = TrajectoryDataset(raw_train_df, [valid_uid], xy2idx, max_len=max_len)
+    #     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #     model = CVAE(input_dim, latent_dim, uid_dim, uid_embed_dim, hidden_dim, max_len, N_valid, num_layers, dropout=0.3).to(device)
+    #     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-        # 訓練迴圈 + EarlyStopping（每 uid 分開）
-        epochs = 20000
-        patience = 100
-        best_loss = float('inf')
-        wait = 0
-        loss_list = []
-        recon_list = []
-        kl_list = []
-        for epoch in range(epochs):
-            beta = min(1.0, epoch / 10000)
-            model.train()
-            total_loss = 0
-            total_recon = 0
-            total_kl = 0
-            for x, mask, lengths, uid, t, working_day, weights, xy_idx in dataloader:
-                x = x.to(device)
-                mask = mask.to(device)
-                t = t.to(device)
-                working_day = working_day.long().to(device)
-                # 單 uid 設為索引 0，避免嵌入越界
-                uid = torch.zeros(x.size(0), dtype=torch.long, device=device)
-                weights = weights.to(device)
-                xy_idx = xy_idx.to(device)
+    #     # 訓練迴圈 + EarlyStopping（每 uid 分開）
+    #     epochs = 20000
+    #     patience = 100
+    #     best_loss = float('inf')
+    #     wait = 0
+    #     loss_list = []
+    #     recon_list = []
+    #     kl_list = []
+    #     for epoch in range(epochs):
+    #         beta = min(1.0, epoch / 10000)
+    #         model.train()
+    #         total_loss = 0
+    #         total_recon = 0
+    #         total_kl = 0
+    #         for x, mask, lengths, uid, t, working_day, weights, xy_idx in dataloader:
+    #             x = x.to(device)
+    #             mask = mask.to(device)
+    #             t = t.to(device)
+    #             working_day = working_day.long().to(device)
+    #             # 單 uid 設為索引 0，避免嵌入越界
+    #             uid = torch.zeros(x.size(0), dtype=torch.long, device=device)
+    #             weights = weights.to(device)
+    #             xy_idx = xy_idx.to(device)
 
-                optimizer.zero_grad()
-                xy_logits, mu, logvar = model(x, uid, t, working_day, mask)
-                loss, recon_loss, kl_loss = cvae_loss(xy_logits, xy_idx, mu, logvar, mask, weights, beta=beta)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
+    #             optimizer.zero_grad()
+    #             xy_logits, mu, logvar = model(x, uid, t, working_day, mask)
+    #             loss, recon_loss, kl_loss = cvae_loss(xy_logits, xy_idx, mu, logvar, mask, weights, beta=beta)
+    #             loss.backward()
+    #             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    #             optimizer.step()
 
-                total_loss += loss.item()
-                total_recon += recon_loss.item()
-                total_kl += kl_loss.item()
+    #             total_loss += loss.item()
+    #             total_recon += recon_loss.item()
+    #             total_kl += kl_loss.item()
 
-            avg_loss = total_loss / len(dataloader)
-            avg_recon = total_recon / len(dataloader)
-            avg_kl = total_kl / len(dataloader)
-            loss_list.append(avg_loss)
-            recon_list.append(avg_recon)
-            kl_list.append(avg_kl)
+    #         avg_loss = total_loss / len(dataloader)
+    #         avg_recon = total_recon / len(dataloader)
+    #         avg_kl = total_kl / len(dataloader)
+    #         loss_list.append(avg_loss)
+    #         recon_list.append(avg_recon)
+    #         kl_list.append(avg_kl)
 
-            if (epoch + 1) % 1000 == 0:
-                print(f"{uid_idx+1}/{len(valid_uid_list)} uid:{valid_uid} Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
+    #         if (epoch + 1) % 1000 == 0:
+    #             print(f"{uid_idx+1}/{len(valid_uid_list)} uid:{valid_uid} Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}, Recon: {avg_recon:.6f}, KL: {avg_kl:.6f}")
 
-            if avg_loss < best_loss:
-                best_loss = avg_loss
-                wait = 0
-                os.makedirs(f"./ckpt/CVAE/uid_level_class/", exist_ok=True)
-                torch.save(model.state_dict(), f"./ckpt/CVAE/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
-            else:
-                wait += 1
-                if wait >= patience:
-                    print(f"uid:{valid_uid} Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
-                    break
+    #         if avg_loss < best_loss:
+    #             best_loss = avg_loss
+    #             wait = 0
+    #             os.makedirs(f"./ckpt/CVAE/uid_level_class/", exist_ok=True)
+    #             torch.save(model.state_dict(), f"./ckpt/CVAE/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
+    #         else:
+    #             wait += 1
+    #             if wait >= patience:
+    #                 print(f"uid:{valid_uid} Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+    #                 break
 
 
     # ===== 針對每個 uid 載入各自模型做推論 =====
     results = []
     test_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
+    valid_uid_list = test_df["uid"].unique()
+    print(f'有效的測試使用者ID數量: {len(valid_uid_list)}')
 
     for idx, uid in enumerate(valid_uid_list):
         user_train_df = raw_train_df[raw_train_df['uid'] == uid]
@@ -334,9 +336,9 @@ if __name__ == "__main__":
     print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_x_cvae_pred.csv")
 
     # ===== scatter cvae 61-75天 vs. gt 61-75 =====
-    mode_pred_df = pd.read_csv(f'./Predictions/A_x_Per_User_Per_t_Mode_working_day.csv')
-    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/A_x_cvae_pred.csv')
-    gt_df = pd.read_csv('./Training_Testing_Data/A_x_test.csv')
+    mode_pred_df = pd.read_csv(f'./Predictions/{city}_x_Per_User_Per_t_Mode_working_day.csv')
+    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/{city}_x_cvae_pred.csv')
+    gt_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
     valid_uid_list = cvae_pred_df['uid'].unique().tolist()
     np.random.shuffle(valid_uid_list)
 
