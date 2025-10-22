@@ -1163,6 +1163,6 @@ if __name__ == "__main__":
     dp = DataPreprocessor()
 
     # 讀取資料
-    train_df, test_df = dp.get_training_testing_data(city_name='B', data_input_path='./2024 RawDataset/cityB-dataset.csv')
-    train_df, test_df = dp.get_training_testing_data(city_name='D', data_input_path='./2024 RawDataset/cityD-dataset.csv')
+    train_df, test_df = dp.get_training_testing_data(city_name='A', data_input_path='./2024 RawDataset/cityA-dataset.csv')
+
 

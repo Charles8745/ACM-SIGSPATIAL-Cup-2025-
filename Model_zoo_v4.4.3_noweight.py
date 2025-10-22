@@ -272,8 +272,8 @@ if __name__ == "__main__":
     #         if avg_loss < best_loss:
     #             best_loss = avg_loss
     #             wait = 0
-    #             os.makedirs(f"./ckpt/CVAE/uid_level_class/", exist_ok=True)
-    #             torch.save(model.state_dict(), f"./ckpt/CVAE/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
+    #             os.makedirs(f"./ckpt/CVAE_noweight/uid_level_class/", exist_ok=True)
+    #             torch.save(model.state_dict(), f"./ckpt/CVAE_noweight/uid_level_class/cvae_model_uid{valid_uid}_l{latent_dim}h{hidden_dim}_city{city}.pth")
     #         else:
     #             wait += 1
     #             if wait >= patience:
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         latent_dim = N_valid
         hidden_dim = N_valid 
 
-        ckpt_path = f"./ckpt/CVAE/uid_level_class/cvae_model_uid{uid}_l{latent_dim}h{hidden_dim}_city{city}.pth"
+        ckpt_path = f"./ckpt/CVAE_noweight/uid_level_class/cvae_model_uid{uid}_l{latent_dim}h{hidden_dim}_city{city}.pth"
         if not os.path.exists(ckpt_path):
             print(f"[warn] 找不到 uid {uid} 的權重，略過")
             continue
@@ -327,13 +327,13 @@ if __name__ == "__main__":
         print(f'預測進度: {idx+1}/{len(valid_uid_list)}', end='\r')
 
     pred_df = pd.DataFrame(results, columns=['uid', 'd', 't', 'x', 'y'])
-    os.makedirs('./Predictions/CVAE/', exist_ok=True)
-    pred_df.to_csv(f'./Predictions/CVAE/{city}_x_cvae_pred.csv', index=False)
-    print(f"已輸出預測結果至 ./Predictions/CVAE/{city}_x_cvae_pred.csv")
+    os.makedirs('./Predictions/CVAE_noweight/', exist_ok=True)
+    pred_df.to_csv(f'./Predictions/CVAE_noweight/{city}_x_cvae_pred.csv', index=False)
+    print(f"已輸出預測結果至 ./Predictions/CVAE_noweight/{city}_x_cvae_pred.csv")
 
     # ===== scatter cvae 61-75天 vs. gt 61-75 =====
     mode_pred_df = pd.read_csv(f'./Predictions/{city}_x_Per_User_Per_t_Mode_working_day.csv')
-    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE/{city}_x_cvae_pred.csv')
+    cvae_pred_df = pd.read_csv(f'./Predictions/CVAE_noweight/{city}_x_cvae_pred.csv')
     gt_df = pd.read_csv(f'./Training_Testing_Data/{city}_x_test.csv')
     valid_uid_list = cvae_pred_df['uid'].unique().tolist()
     np.random.shuffle(valid_uid_list)
